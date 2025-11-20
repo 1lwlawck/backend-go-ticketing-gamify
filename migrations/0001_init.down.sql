@@ -1,0 +1,16 @@
+DROP TABLE IF EXISTS audit_log;
+DROP TABLE IF EXISTS xp_events;
+DROP TABLE IF EXISTS gamification_user_stats;
+DROP TABLE IF EXISTS ticket_comments;
+DROP TABLE IF EXISTS ticket_history;
+DROP TABLE IF EXISTS tickets;
+DROP TABLE IF EXISTS project_invites;
+DROP TABLE IF EXISTS project_members;
+DROP TABLE IF EXISTS projects;
+DROP TABLE IF EXISTS users;
+DROP TYPE IF EXISTS project_member_role;
+DROP TYPE IF EXISTS ticket_type;
+DROP TYPE IF EXISTS ticket_priority;
+DROP TYPE IF EXISTS ticket_status;
+DROP TYPE IF EXISTS project_status;
+DROP TYPE IF EXISTS user_role;

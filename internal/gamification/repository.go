@@ -1,0 +1,155 @@
+package gamification
+
+import (
+	"context"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Repository handles DB operations.
+type Repository struct {
+	db *pgxpool.Pool
+}
+
+func NewRepository(db *pgxpool.Pool) *Repository {
+	return &Repository{db: db}
+}
+
+func (r *Repository) GetStats(ctx context.Context, userID string) (*UserStats, error) {
+	const query = `
+SELECT user_id, xp_total, level, next_level_threshold, tickets_closed_count, streak_days, COALESCE(last_ticket_closed_at, NOW()) 
+FROM gamification_user_stats
+WHERE user_id = $1`
+	var stats UserStats
+	if err := r.db.QueryRow(ctx, query, userID).Scan(
+		&stats.UserID,
+		&stats.XPTotal,
+		&stats.Level,
+		&stats.NextLevelThreshold,
+		&stats.TicketsClosed,
+		&stats.StreakDays,
+		&stats.LastTicketClosedAt,
+	); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &stats, nil
+}
+
+func (r *Repository) ListEvents(ctx context.Context, userID string, limit int) ([]XPEvent, error) {
+	const query = `
+SELECT id, user_id, ticket_id, priority, xp_value, note, created_at
+FROM xp_events
+WHERE CASE WHEN $1 = '' THEN TRUE ELSE user_id = $1::uuid END
+ORDER BY created_at DESC
+LIMIT $2`
+	rows, err := r.db.Query(ctx, query, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []XPEvent
+	for rows.Next() {
+		var e XPEvent
+		if err := rows.Scan(&e.ID, &e.UserID, &e.TicketID, &e.Priority, &e.XP, &e.Note, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+func (r *Repository) Award(ctx context.Context, input AwardInput) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	const insertEvent = `
+INSERT INTO xp_events (id, user_id, ticket_id, priority, xp_value, note)
+VALUES ($1, $2, $3, $4, $5, $6)`
+	if _, err := tx.Exec(ctx, insertEvent, uuid.NewString(), input.UserID, input.TicketID, input.Priority, input.XP, input.Note); err != nil {
+		return err
+	}
+
+	const upsertStats = `
+INSERT INTO gamification_user_stats (user_id, xp_total, level, next_level_threshold, tickets_closed_count, streak_days, last_ticket_closed_at)
+VALUES ($1, $2, 1, 100, 1, 1, NOW())
+ON CONFLICT (user_id) DO UPDATE
+SET xp_total = gamification_user_stats.xp_total + EXCLUDED.xp_total,
+    tickets_closed_count = gamification_user_stats.tickets_closed_count + 1,
+    level = FLOOR((gamification_user_stats.xp_total + EXCLUDED.xp_total)/100)::int + 1,
+    next_level_threshold = (FLOOR((gamification_user_stats.xp_total + EXCLUDED.xp_total)/100)::int + 1) * 100,
+    streak_days = CASE
+        WHEN gamification_user_stats.last_ticket_closed_at >= CURRENT_DATE THEN gamification_user_stats.streak_days
+        WHEN gamification_user_stats.last_ticket_closed_at = CURRENT_DATE - INTERVAL '1 day' THEN gamification_user_stats.streak_days + 1
+        ELSE 1
+    END,
+    last_ticket_closed_at = NOW()`
+	if _, err := tx.Exec(ctx, upsertStats, input.UserID, input.XP); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) EnsureUser(ctx context.Context, userID string) error {
+	const query = `
+INSERT INTO gamification_user_stats (user_id, xp_total, level, next_level_threshold, tickets_closed_count, streak_days, last_ticket_closed_at)
+VALUES ($1, 0, 1, 100, 0, 0, NULL)
+ON CONFLICT (user_id) DO NOTHING`
+	_, err := r.db.Exec(ctx, query, userID)
+	return err
+}
+
+func (r *Repository) Leaderboard(ctx context.Context, limit int) ([]LeaderboardRow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	const query = `
+SELECT u.id,
+       u.name,
+       u.username,
+       u.role,
+       COALESCE(g.xp_total, 0)   AS xp,
+       COALESCE(g.level, 1)      AS level,
+       COALESCE(g.tickets_closed_count, 0) AS tickets_closed_count
+FROM users u
+LEFT JOIN gamification_user_stats g ON g.user_id = u.id
+ORDER BY COALESCE(g.xp_total, 0) DESC, COALESCE(g.level, 1) DESC
+LIMIT $1`
+	rows, err := r.db.Query(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rowsOut []LeaderboardRow
+	position := 1
+	var leaderXP int
+
+	for rows.Next() {
+		var row LeaderboardRow
+		if err := rows.Scan(&row.ID, &row.Name, &row.Username, &row.Role, &row.XP, &row.Level, &row.TicketsClosedCount); err != nil {
+			return nil, err
+		}
+		row.Rank = position
+		if position == 1 {
+			leaderXP = row.XP
+			row.XPGap = 0
+		} else {
+			row.XPGap = leaderXP - row.XP
+			if row.XPGap < 0 {
+				row.XPGap = 0
+			}
+		}
+		rowsOut = append(rowsOut, row)
+		position++
+	}
+	return rowsOut, rows.Err()
+}

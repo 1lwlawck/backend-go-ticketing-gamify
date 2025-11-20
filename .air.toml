@@ -1,0 +1,20 @@
+# Config reference: https://github.com/cosmtrek/air
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go run ./cmd/server"
+  bin = "tmp/main"
+  delay = 1000
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "node_modules"]
+  exclude_file = []
+  exclude_regex = ["_test\\.go"]
+  full_bin = "tmp/main"
+  log = "build.log"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

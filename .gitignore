@@ -1,0 +1,10 @@
+# Build artifacts
+bin/
+dist/
+
+# OS files
+.DS_Store
+
+# Go test cache
+*.out
+coverage*.txt
