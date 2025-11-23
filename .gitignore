@@ -1,11 +1,36 @@
-# Build artifacts
+# Binaries & build
+tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build cache
 bin/
 dist/
-
-.env
-# OS files
-.DS_Store
-
-# Go test cache
+*.test
 *.out
-coverage*.txt
+
+# IDE/editor
+.idea/
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Env & secrets
+.env
+.env.local
+
+# Logs
+*.log
+
+# Coverage
+*.cover
+*.cov
+coverage.txt
+
+# Dependencies (if any vendoring)
+vendor/
