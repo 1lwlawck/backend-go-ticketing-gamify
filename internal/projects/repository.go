@@ -19,15 +19,16 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) List(ctx context.Context) ([]Project, error) {
+func (r *Repository) List(ctx context.Context, limit int) ([]Project, error) {
 	const query = `
 SELECT p.id, p.name, p.description, p.status, COALESCE(tc.cnt, 0), p.created_at
 FROM projects p
 LEFT JOIN LATERAL (
   SELECT COUNT(*)::int AS cnt FROM tickets t WHERE t.project_id = p.id
 ) tc ON true
-ORDER BY p.created_at DESC`
-	rows, err := r.db.Query(ctx, query)
+ORDER BY p.created_at DESC
+LIMIT $1`
+	rows, err := r.db.Query(ctx, query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +45,7 @@ ORDER BY p.created_at DESC`
 	return projects, rows.Err()
 }
 
-func (r *Repository) ListForMember(ctx context.Context, userID string) ([]Project, error) {
+func (r *Repository) ListForMember(ctx context.Context, userID string, limit int) ([]Project, error) {
 	const query = `
 SELECT p.id, p.name, p.description, p.status, COALESCE(tc.cnt, 0), p.created_at
 FROM project_members pm
@@ -53,8 +54,9 @@ LEFT JOIN LATERAL (
   SELECT COUNT(*)::int AS cnt FROM tickets t WHERE t.project_id = p.id
 ) tc ON true
 WHERE pm.user_id = $1
-ORDER BY p.created_at DESC`
-	rows, err := r.db.Query(ctx, query, userID)
+ORDER BY p.created_at DESC
+LIMIT $2`
+	rows, err := r.db.Query(ctx, query, userID, limit)
 	if err != nil {
 		return nil, err
 	}

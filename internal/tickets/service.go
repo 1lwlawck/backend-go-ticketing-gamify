@@ -20,6 +20,7 @@ var (
 	}
 	// ErrForbidden is returned when the user has no permission to mutate ticket.
 	ErrForbidden = errors.New("forbidden")
+	ErrNotFound  = errors.New("not_found")
 )
 
 func canModify(actor *middleware.UserContext, ticket *Ticket) bool {
@@ -206,7 +207,7 @@ func (s *Service) DeleteComment(ctx context.Context, actor *middleware.UserConte
 	}
 	if err := s.repo.DeleteComment(ctx, commentID, actor.ID); err != nil {
 		if err == pgx.ErrNoRows {
-			return ErrForbidden
+			return ErrNotFound
 		}
 		return err
 	}

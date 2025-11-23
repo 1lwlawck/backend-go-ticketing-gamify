@@ -1,10 +1,12 @@
 package auth
 
 import (
-	"backend-go-ticketing-gamify/internal/middleware"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"backend-go-ticketing-gamify/internal/middleware"
+	"backend-go-ticketing-gamify/internal/response"
 )
 
 // Handler exposes HTTP routes for auth.
@@ -19,6 +21,7 @@ func NewHandler(service *Service) *Handler {
 func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
 	router.POST("/login", h.login)
 	router.POST("/register", h.register)
+	router.POST("/refresh", h.refresh)
 }
 
 // RegisterProtected mounts routes that need authentication.
@@ -34,19 +37,21 @@ type loginRequest struct {
 func (h *Handler) login(c *gin.Context) {
 	var payload loginRequest
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	result, err := h.service.Login(c.Request.Context(), payload.Username, payload.Password)
 	if err != nil {
 		status := http.StatusInternalServerError
+		code := "internal_error"
 		if err == ErrInvalidCredentials {
 			status = http.StatusUnauthorized
+			code = "invalid_credentials"
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		response.ErrorCode(c, status, code, err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	response.OK(c, result)
 }
 
 type registerRequest struct {
@@ -62,7 +67,11 @@ type registerRequest struct {
 func (h *Handler) register(c *gin.Context) {
 	var payload registerRequest
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	if payload.Role != "" && !isAllowedRole(payload.Role) {
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", "invalid role")
 		return
 	}
 	result, err := h.service.Register(c.Request.Context(), RegisterInput{
@@ -75,10 +84,32 @@ func (h *Handler) register(c *gin.Context) {
 		Bio:       payload.Bio,
 	})
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
-	c.JSON(http.StatusCreated, result)
+	response.Created(c, result)
+}
+
+type refreshRequest struct {
+	RefreshToken string `json:"refreshToken" binding:"required"`
+}
+
+func (h *Handler) refresh(c *gin.Context) {
+	var payload refreshRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	result, err := h.service.Refresh(c.Request.Context(), payload.RefreshToken)
+	if err != nil {
+		if err == ErrInvalidCredentials {
+			response.ErrorCode(c, http.StatusUnauthorized, "invalid_refresh_token", "invalid refresh token")
+			return
+		}
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	response.OK(c, result)
 }
 
 type changePasswordRequest struct {
@@ -89,25 +120,34 @@ type changePasswordRequest struct {
 func (h *Handler) changePassword(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	var payload changePasswordRequest
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	if payload.NewPassword == payload.OldPassword {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "new password must differ from old password"})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", "new password must differ from old password")
 		return
 	}
 	if err := h.service.ChangePassword(c.Request.Context(), user.ID, payload.OldPassword, payload.NewPassword); err != nil {
 		if err == ErrInvalidCredentials {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid old password"})
+			response.ErrorCode(c, http.StatusUnauthorized, "invalid_credentials", "invalid old password")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func isAllowedRole(role string) bool {
+	switch role {
+	case "admin", "project_manager", "developer", "viewer":
+		return true
+	default:
+		return false
+	}
 }

@@ -5,6 +5,8 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+
+	"backend-go-ticketing-gamify/internal/response"
 )
 
 // Handler wires HTTP requests to the gamification service.
@@ -27,44 +29,44 @@ func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
 func (h *Handler) getStats(c *gin.Context) {
 	userID := c.Param("userID")
 	if userID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "userID is required"})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", "userID is required")
 		return
 	}
 	stats, err := h.service.GetStats(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if stats == nil {
-		stats = &UserStats{
-			UserID:             userID,
-			XPTotal:            0,
-			Level:              1,
-			NextLevelThreshold: 100,
-			TicketsClosed:      0,
-			StreakDays:         0,
-		}
+		response.ErrorCode(c, http.StatusNotFound, "not_found", "stats not found")
+		return
 	}
-	c.JSON(http.StatusOK, stats)
+	response.OK(c, stats)
 }
 
 func (h *Handler) listEvents(c *gin.Context) {
 	userID := c.Query("userId")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
 	events, err := h.service.ListEvents(c.Request.Context(), userID, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": events})
+	response.WithMeta(c, http.StatusOK, events, gin.H{"limit": limit})
 }
 
 func (h *Handler) leaderboard(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
 	rows, err := h.service.Leaderboard(c.Request.Context(), limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": rows})
+	response.OK(c, rows)
 }

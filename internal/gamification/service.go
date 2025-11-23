@@ -9,7 +9,7 @@ type LeaderboardRow struct {
 	Role               string `json:"role"`
 	XP                 int    `json:"xp"`
 	Level              int    `json:"level"`
-	TicketsClosedCount int    `json:"tickets_closed_count"`
+	TicketsClosedCount int    `json:"ticketsClosedCount"`
 	Rank               int    `json:"rank"`
 	XPGap              int    `json:"xpGap"`
 }

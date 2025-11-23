@@ -28,14 +28,17 @@ var (
 	ErrNotMember = errors.New("not_member")
 )
 
-func (s *Service) List(ctx context.Context, actor *middleware.UserContext) ([]Project, error) {
+func (s *Service) List(ctx context.Context, actor *middleware.UserContext, limit int) ([]Project, error) {
 	if actor == nil {
 		return nil, ErrForbidden
 	}
-	if isElevated(actor.Role) {
-		return s.repo.List(ctx)
+	if limit <= 0 || limit > 200 {
+		limit = 50
 	}
-	return s.repo.ListForMember(ctx, actor.ID)
+	if isElevated(actor.Role) {
+		return s.repo.List(ctx, limit)
+	}
+	return s.repo.ListForMember(ctx, actor.ID, limit)
 }
 
 func (s *Service) Get(ctx context.Context, actor *middleware.UserContext, id string) (*Detail, error) {

@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	"crypto/sha256"
+	"encoding/hex"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -24,6 +27,7 @@ type Service struct {
 	gamification *gamification.Service
 	audit        *audit.Service
 	jwtSecret    string
+	refreshTTL   time.Duration
 }
 
 func NewService(repo *Repository, gamificationSvc *gamification.Service, auditSvc *audit.Service, jwtSecret string) *Service {
@@ -32,6 +36,7 @@ func NewService(repo *Repository, gamificationSvc *gamification.Service, auditSv
 		gamification: gamificationSvc,
 		audit:        auditSvc,
 		jwtSecret:    jwtSecret,
+		refreshTTL:   7 * 24 * time.Hour,
 	}
 }
 
@@ -53,7 +58,7 @@ func (s *Service) Login(ctx context.Context, username, password string) (*LoginR
 		return nil, ErrInvalidCredentials
 	}
 
-	return s.buildLoginResponse(user)
+	return s.buildLoginResponse(ctx, user, "")
 }
 
 // Register creates a new user and immediately issues a token.
@@ -107,7 +112,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*LoginResp
 		entityID := user.ID
 		_ = s.audit.Log(ctx, action, description, &actorID, &entityType, &entityID)
 	}
-	return s.buildLoginResponse(user)
+	return s.buildLoginResponse(ctx, user, "")
 }
 
 // ChangePassword lets an authenticated user rotate password.
@@ -143,8 +148,12 @@ func (s *Service) ChangePassword(ctx context.Context, userID, oldPassword, newPa
 	return nil
 }
 
-func (s *Service) buildLoginResponse(user *User) (*LoginResponse, error) {
+func (s *Service) buildLoginResponse(ctx context.Context, user *User, existingRefreshID string) (*LoginResponse, error) {
 	token, err := s.createToken(user)
+	if err != nil {
+		return nil, err
+	}
+	refreshToken, err := s.issueRefreshToken(ctx, user.ID, existingRefreshID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +162,8 @@ func (s *Service) buildLoginResponse(user *User) (*LoginResponse, error) {
 		bio = *user.Bio
 	}
 	return &LoginResponse{
-		Token: token,
+		Token:        token,
+		RefreshToken: refreshToken,
 		User: UserPublic{
 			ID:        user.ID,
 			Name:      user.Name,
@@ -180,8 +190,9 @@ func (s *Service) createToken(user *User) (string, error) {
 
 // LoginResponse returned to clients.
 type LoginResponse struct {
-	Token string     `json:"token"`
-	User  UserPublic `json:"user"`
+	Token        string     `json:"token"`
+	RefreshToken string     `json:"refreshToken"`
+	User         UserPublic `json:"user"`
 }
 
 // UserPublic is safe subset of user profile.
@@ -204,4 +215,62 @@ type RegisterInput struct {
 	AvatarURL string   `json:"avatarUrl"`
 	Badges    []string `json:"badges"`
 	Bio       *string  `json:"bio"`
+}
+
+// Refresh validates a refresh token, rotates it, and issues new tokens.
+func (s *Service) Refresh(ctx context.Context, refreshPlain string) (*LoginResponse, error) {
+	refreshID, secret, err := splitRefresh(refreshPlain)
+	if err != nil {
+		return nil, ErrInvalidCredentials
+	}
+	stored, err := s.repo.GetRefreshToken(ctx, refreshID)
+	if err != nil {
+		return nil, err
+	}
+	if stored == nil || stored.RevokedAt != nil || time.Now().After(stored.ExpiresAt) {
+		return nil, ErrInvalidCredentials
+	}
+	secretHash := hashRefresh(secret)
+	if secretHash != stored.TokenHash {
+		return nil, ErrInvalidCredentials
+	}
+	user, err := s.repo.FindByID(ctx, stored.UserID)
+	if err != nil || user == nil {
+		return nil, ErrInvalidCredentials
+	}
+	// rotate: revoke old and issue new
+	_ = s.repo.RevokeRefreshToken(ctx, stored.ID)
+	return s.buildLoginResponse(ctx, user, stored.ID)
+}
+
+func (s *Service) issueRefreshToken(ctx context.Context, userID string, previousID string) (string, error) {
+	secret := uuid.NewString() + uuid.NewString()
+	secret = strings.ReplaceAll(secret, "-", "")
+	refreshID := uuid.NewString()
+	now := time.Now()
+	token := RefreshToken{
+		ID:        refreshID,
+		UserID:    userID,
+		TokenHash: hashRefresh(secret),
+		ExpiresAt: now.Add(s.refreshTTL),
+		RevokedAt: nil,
+		CreatedAt: now,
+	}
+	if err := s.repo.CreateRefreshToken(ctx, token); err != nil {
+		return "", err
+	}
+	return refreshID + "." + secret, nil
+}
+
+func splitRefresh(raw string) (string, string, error) {
+	parts := strings.Split(raw, ".")
+	if len(parts) != 2 {
+		return "", "", ErrInvalidCredentials
+	}
+	return parts[0], parts[1], nil
+}
+
+func hashRefresh(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:])
 }

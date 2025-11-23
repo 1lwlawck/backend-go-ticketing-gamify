@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"backend-go-ticketing-gamify/internal/middleware"
+	"backend-go-ticketing-gamify/internal/response"
 )
 
 // Handler exposes ticket routes.
@@ -33,6 +34,9 @@ func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
 
 func (h *Handler) list(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
 	filter := Filter{
 		ProjectID:  c.Query("projectId"),
 		AssigneeID: c.Query("assigneeId"),
@@ -41,157 +45,173 @@ func (h *Handler) list(c *gin.Context) {
 	}
 	tickets, err := h.service.List(c.Request.Context(), filter)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": tickets})
+	response.WithMeta(c, http.StatusOK, tickets, gin.H{"limit": limit})
 }
 
 func (h *Handler) create(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	var payload CreateInput
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	if err := validateTicketEnums("", payload.Priority, payload.Type); err != nil {
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	payload.ReporterID = user.ID
 	ticket, err := h.service.Create(c.Request.Context(), user, payload)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	c.JSON(http.StatusCreated, ticket)
+	response.Created(c, ticket)
 }
 
 func (h *Handler) get(c *gin.Context) {
 	ticket, err := h.service.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if ticket == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ticket not found"})
+		response.ErrorCode(c, http.StatusNotFound, "not_found", "ticket not found")
 		return
 	}
-	c.JSON(http.StatusOK, ticket)
+	response.OK(c, ticket)
 }
 
 func (h *Handler) updateStatus(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	var payload UpdateStatusInput
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	if err := validateTicketEnums(payload.Status, "", ""); err != nil {
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	ticket, err := h.service.UpdateStatus(c.Request.Context(), user, c.Param("id"), payload.Status)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if ticket == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ticket not found"})
+		response.ErrorCode(c, http.StatusNotFound, "not_found", "ticket not found")
 		return
 	}
-	c.JSON(http.StatusOK, ticket)
+	response.OK(c, ticket)
 }
 
 func (h *Handler) updateDetails(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	var payload UpdateInput
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	if err := validateTicketEnums("", deref(payload.Priority), deref(payload.Type)); err != nil {
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	ticket, err := h.service.UpdateDetails(c.Request.Context(), user, c.Param("id"), payload)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if ticket == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ticket not found"})
+		response.ErrorCode(c, http.StatusNotFound, "not_found", "ticket not found")
 		return
 	}
-	c.JSON(http.StatusOK, ticket)
+	response.OK(c, ticket)
 }
 
 func (h *Handler) addComment(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	var payload CommentInput
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	comment, err := h.service.AddComment(c.Request.Context(), user, c.Param("id"), payload.Text)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	c.JSON(http.StatusCreated, comment)
+	response.Created(c, comment)
 }
 
 func (h *Handler) updateComment(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	var payload CommentUpdate
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	comment, err := h.service.UpdateComment(c.Request.Context(), user, c.Param("commentId"), payload.Text)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if comment == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "comment not found"})
+		response.ErrorCode(c, http.StatusNotFound, "not_found", "comment not found")
 		return
 	}
-	c.JSON(http.StatusOK, comment)
+	response.OK(c, comment)
 }
 
 func (h *Handler) deleteComment(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	if err := h.service.DeleteComment(c.Request.Context(), user, c.Param("commentId")); err != nil {
 		if errors.Is(err, ErrForbidden) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if errors.Is(err, ErrNotFound) {
+			response.ErrorCode(c, http.StatusNotFound, "not_found", "comment not found")
+			return
+		}
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -200,16 +220,48 @@ func (h *Handler) deleteComment(c *gin.Context) {
 func (h *Handler) delete(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	if err := h.service.Delete(c.Request.Context(), user, c.Param("id")); err != nil {
 		if errors.Is(err, ErrForbidden) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func validateTicketEnums(status, priority, typ string) error {
+	if status != "" {
+		switch status {
+		case "todo", "in_progress", "review", "done":
+		default:
+			return errors.New("invalid status")
+		}
+	}
+	if priority != "" {
+		switch priority {
+		case "low", "medium", "high", "urgent":
+		default:
+			return errors.New("invalid priority")
+		}
+	}
+	if typ != "" {
+		switch typ {
+		case "feature", "bug", "chore":
+		default:
+			return errors.New("invalid type")
+		}
+	}
+	return nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

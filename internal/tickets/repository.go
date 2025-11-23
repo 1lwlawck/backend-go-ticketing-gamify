@@ -30,7 +30,7 @@ func (r *Repository) List(ctx context.Context, filter Filter) ([]Ticket, error) 
 		idx  = 1
 		sb   strings.Builder
 	)
-	sb.WriteString(`SELECT t.id, t.project_id, t.title, t.description, t.status, t.priority, t.type, t.reporter_id, t.assignee_id, assignee.name, t.due_date, t.created_at, t.updated_at FROM tickets t LEFT JOIN users assignee ON assignee.id = t.assignee_id WHERE 1=1`)
+	sb.WriteString(`SELECT t.id, t.project_id, t.title, t.description, t.status, t.priority, t.type, t.reporter_id, t.assignee_id, assignee.name, t.start_date, t.due_date, t.created_at, t.updated_at FROM tickets t LEFT JOIN users assignee ON assignee.id = t.assignee_id WHERE 1=1`)
 	if filter.ProjectID != "" {
 		sb.WriteString(fmt.Sprintf(" AND project_id = $%d", idx))
 		args = append(args, filter.ProjectID)
@@ -58,7 +58,7 @@ func (r *Repository) List(ctx context.Context, filter Filter) ([]Ticket, error) 
 	var tickets []Ticket
 	for rows.Next() {
 		var t Ticket
-		if err := rows.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.Type, &t.ReporterID, &t.AssigneeID, &t.AssigneeName, &t.DueDate, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			if err := rows.Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.Type, &t.ReporterID, &t.AssigneeID, &t.AssigneeName, &t.StartDate, &t.DueDate, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		tickets = append(tickets, t)
@@ -68,12 +68,12 @@ func (r *Repository) List(ctx context.Context, filter Filter) ([]Ticket, error) 
 
 func (r *Repository) Get(ctx context.Context, id string) (*Ticket, error) {
 	const query = `
-SELECT t.id, t.project_id, t.title, t.description, t.status, t.priority, t.type, t.reporter_id, t.assignee_id, assignee.name, t.due_date, t.created_at, t.updated_at
+SELECT t.id, t.project_id, t.title, t.description, t.status, t.priority, t.type, t.reporter_id, t.assignee_id, assignee.name, t.start_date, t.due_date, t.created_at, t.updated_at
 FROM tickets t
 LEFT JOIN users assignee ON assignee.id = t.assignee_id
 WHERE t.id = $1`
 	var t Ticket
-	if err := r.db.QueryRow(ctx, query, id).Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.Type, &t.ReporterID, &t.AssigneeID, &t.AssigneeName, &t.DueDate, &t.CreatedAt, &t.UpdatedAt); err != nil {
+	if err := r.db.QueryRow(ctx, query, id).Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.Type, &t.ReporterID, &t.AssigneeID, &t.AssigneeName, &t.StartDate, &t.DueDate, &t.CreatedAt, &t.UpdatedAt); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
 		}
@@ -87,14 +87,14 @@ WHERE t.id = $1`
 
 func (r *Repository) Create(ctx context.Context, input CreateInput) (*Ticket, error) {
 	const query = `
-INSERT INTO tickets (id, project_id, title, description, status, priority, type, reporter_id, assignee_id, due_date, created_at, updated_at)
-VALUES ($1, $2, $3, $4, 'todo', $5, $6, $7, $8, $9, $10, $10)
-RETURNING id, project_id, title, description, status, priority, type, reporter_id, assignee_id, due_date, created_at, updated_at`
+INSERT INTO tickets (id, project_id, title, description, status, priority, type, reporter_id, assignee_id, start_date, due_date, created_at, updated_at)
+VALUES ($1, $2, $3, $4, 'todo', $5, $6, $7, $8, $9, $10, $11, $11)
+RETURNING id, project_id, title, description, status, priority, type, reporter_id, assignee_id, start_date, due_date, created_at, updated_at`
 	now := time.Now()
 	var t Ticket
 	ticketID := uuid.NewString()
-	if err := r.db.QueryRow(ctx, query, ticketID, input.ProjectID, input.Title, input.Description, input.Priority, input.Type, input.ReporterID, input.AssigneeID, input.DueDate, now).
-		Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.Type, &t.ReporterID, &t.AssigneeID, &t.DueDate, &t.CreatedAt, &t.UpdatedAt); err != nil {
+	if err := r.db.QueryRow(ctx, query, ticketID, input.ProjectID, input.Title, input.Description, input.Priority, input.Type, input.ReporterID, input.AssigneeID, input.StartDate, input.DueDate, now).
+		Scan(&t.ID, &t.ProjectID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.Type, &t.ReporterID, &t.AssigneeID, &t.StartDate, &t.DueDate, &t.CreatedAt, &t.UpdatedAt); err != nil {
 		return nil, err
 	}
 	_ = r.addHistory(ctx, t.ID, "Ticket created", nil)
@@ -146,12 +146,25 @@ func (r *Repository) UpdateFields(ctx context.Context, ticketID string, input Up
 		args = append(args, *input.Type)
 		idx++
 	}
-	if input.AssigneeID != nil {
-		setParts = append(setParts, fmt.Sprintf("assignee_id = $%d", idx))
-		args = append(args, input.AssigneeID)
+	if input.StartDate != nil {
+		setParts = append(setParts, fmt.Sprintf("start_date = $%d", idx))
+		args = append(args, input.StartDate)
 		idx++
+	} else if input.ClearStart {
+		setParts = append(setParts, "start_date = NULL")
 	}
-	if input.DueDate != nil {
+	if input.AssigneeID != nil {
+		if *input.AssigneeID == "" {
+			setParts = append(setParts, "assignee_id = NULL")
+		} else {
+			setParts = append(setParts, fmt.Sprintf("assignee_id = $%d", idx))
+			args = append(args, input.AssigneeID)
+			idx++
+		}
+	}
+	if input.ClearDueDate {
+		setParts = append(setParts, "due_date = NULL")
+	} else if input.DueDate != nil {
 		setParts = append(setParts, fmt.Sprintf("due_date = $%d", idx))
 		args = append(args, input.DueDate)
 		idx++

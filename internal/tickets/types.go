@@ -14,6 +14,7 @@ type Ticket struct {
 	ReporterID   string         `json:"reporterId"`
 	AssigneeID   *string        `json:"assigneeId,omitempty"`
 	AssigneeName *string        `json:"assigneeName,omitempty"`
+	StartDate    *time.Time     `json:"startDate,omitempty"`
 	DueDate      *time.Time     `json:"dueDate,omitempty"`
 	CreatedAt    time.Time      `json:"createdAt"`
 	UpdatedAt    time.Time      `json:"updatedAt"`
@@ -38,6 +39,7 @@ type CreateInput struct {
 	Type        string     `json:"type" binding:"required"`
 	ReporterID  string     `json:"reporterId"`
 	AssigneeID  *string    `json:"assigneeId"`
+	StartDate   *time.Time `json:"startDate"`
 	DueDate     *time.Time `json:"dueDate"`
 }
 
@@ -48,12 +50,15 @@ type UpdateStatusInput struct {
 
 // UpdateInput captures editable ticket fields.
 type UpdateInput struct {
-	Title       *string    `json:"title"`
-	Description *string    `json:"description"`
-	Priority    *string    `json:"priority"`
-	Type        *string    `json:"type"`
-	AssigneeID  *string    `json:"assigneeId"`
-	DueDate     *time.Time `json:"dueDate"`
+	Title        *string    `json:"title"`
+	Description  *string    `json:"description"`
+	Priority     *string    `json:"priority"`
+	Type         *string    `json:"type"`
+	AssigneeID   *string    `json:"assigneeId"`
+	StartDate    *time.Time `json:"startDate"`
+	DueDate      *time.Time `json:"dueDate"`
+	ClearStart   bool       `json:"clearStartDate"`
+	ClearDueDate bool       `json:"clearDueDate"`
 }
 
 // Comment represents ticket comment.

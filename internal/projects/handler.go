@@ -3,10 +3,12 @@ package projects
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"backend-go-ticketing-gamify/internal/middleware"
+	"backend-go-ticketing-gamify/internal/response"
 )
 
 // Handler exposes HTTP routes.
@@ -31,77 +33,85 @@ func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
 func (h *Handler) list(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
-	projects, err := h.service.List(c.Request.Context(), user)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	projects, err := h.service.List(c.Request.Context(), user, limit)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		}
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": projects})
+	response.WithMeta(c, http.StatusOK, projects, gin.H{"limit": limit})
 }
 
 func (h *Handler) get(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	project, err := h.service.Get(c.Request.Context(), user, c.Param("id"))
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if project == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
+		response.ErrorCode(c, http.StatusNotFound, "not_found", "project not found")
 		return
 	}
-	c.JSON(http.StatusOK, project)
+	response.OK(c, project)
 }
 
 func (h *Handler) create(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 
 	var payload CreateInput
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	if payload.Name == "" || payload.Description == "" {
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", "name and description are required")
 		return
 	}
 
 	project, err := h.service.Create(c.Request.Context(), user, payload)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	c.JSON(http.StatusCreated, project)
+	response.Created(c, project)
 }
 
 func (h *Handler) addMember(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	var payload AddMemberInput
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	if err := h.service.AddMember(c.Request.Context(), user, c.Param("id"), payload); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -110,57 +120,57 @@ func (h *Handler) addMember(c *gin.Context) {
 func (h *Handler) createInvite(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	var payload InviteInput
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	invite, err := h.service.CreateInvite(c.Request.Context(), user, c.Param("id"), payload)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	c.JSON(http.StatusCreated, invite)
+	response.Created(c, invite)
 }
 
 func (h *Handler) joinByCode(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	var payload struct {
 		Code string `json:"code" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	project, err := h.service.JoinByCode(c.Request.Context(), user, payload.Code)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, project)
+	response.OK(c, project)
 }
 
 func (h *Handler) leaveSelf(c *gin.Context) {
 	user := middleware.CurrentUser(c)
 	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	if err := h.service.Leave(c.Request.Context(), user, c.Param("id")); err != nil {
 		switch {
 		case errors.Is(err, ErrForbidden):
-			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")
 		case errors.Is(err, ErrNotMember):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "you are not a member of this project"})
+			response.ErrorCode(c, http.StatusBadRequest, "validation_error", "you are not a member of this project")
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		}
 		return
 	}

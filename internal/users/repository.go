@@ -16,12 +16,13 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) List(ctx context.Context) ([]User, error) {
+func (r *Repository) List(ctx context.Context, limit int) ([]User, error) {
 	const query = `
 SELECT id, name, username, role, COALESCE(avatar_url, ''), COALESCE(badges, ARRAY[]::text[]), COALESCE(bio, ''), created_at
 FROM users
-ORDER BY name`
-	rows, err := r.db.Query(ctx, query)
+ORDER BY name
+LIMIT $1`
+	rows, err := r.db.Query(ctx, query, limit)
 	if err != nil {
 		return nil, err
 	}

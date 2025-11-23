@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -37,6 +38,15 @@ type CreateUserParams struct {
 	AvatarURL    string
 	Badges       []string
 	Bio          *string
+}
+
+type RefreshToken struct {
+	ID        string
+	UserID    string
+	TokenHash string
+	ExpiresAt time.Time
+	RevokedAt *time.Time
+	CreatedAt time.Time
 }
 
 func (r *Repository) FindByUsername(ctx context.Context, username string) (*User, error) {
@@ -143,4 +153,35 @@ WHERE id = $1`
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+func (r *Repository) CreateRefreshToken(ctx context.Context, token RefreshToken) error {
+	const query = `
+INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, revoked_at, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)`
+	_, err := r.db.Exec(ctx, query, token.ID, token.UserID, token.TokenHash, token.ExpiresAt, token.RevokedAt, token.CreatedAt)
+	return err
+}
+
+func (r *Repository) GetRefreshToken(ctx context.Context, id string) (*RefreshToken, error) {
+	const query = `
+SELECT id, user_id, token_hash, expires_at, revoked_at, created_at
+FROM refresh_tokens
+WHERE id = $1`
+	var t RefreshToken
+	if err := r.db.QueryRow(ctx, query, id).Scan(
+		&t.ID, &t.UserID, &t.TokenHash, &t.ExpiresAt, &t.RevokedAt, &t.CreatedAt,
+	); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (r *Repository) RevokeRefreshToken(ctx context.Context, id string) error {
+	const query = `UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1`
+	_, err := r.db.Exec(ctx, query, id)
+	return err
 }

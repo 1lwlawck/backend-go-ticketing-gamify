@@ -2,9 +2,7 @@
 info:
   title: Ticketing Gamification API
   version: 1.0.0
-  description: >-
-    REST API powering the Vue ticketing + gamification frontend. All protected
-    endpoints sit under `/api/v1` and require a JWT bearer token.
+  description: REST API for ticketing + gamification. All protected routes under `/api/v1` require JWT (and `X-API-Key` if enabled).
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -14,75 +12,129 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Optional. Required only when API key enforcement is enabled on the server.
+  parameters:
+    PaginationLimit:
+      in: query
+      name: limit
+      schema:
+        type: integer
+        default: 50
+        maximum: 200
+      description: Max items to return (default 50, max 200)
   schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: validation_error
+            message:
+              type: string
+              example: invalid role
+            details:
+              description: Optional extra information (e.g., field errors)
+              nullable: true
+              oneOf:
+                - type: object
+                - type: array
+                  items: {}
+                - type: string
+    DataResponse:
+      type: object
+      required: [data]
+      properties:
+        data: {}
+    PagedResponse:
+      allOf:
+        - $ref: '#/components/schemas/DataResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: {}
+            limit:
+              type: integer
+    TicketStatus:
+      type: string
+      enum: [todo, in_progress, review, done]
+    TicketPriority:
+      type: string
+      enum: [low, medium, high, urgent]
+    TicketType:
+      type: string
+      enum: [feature, bug, chore]
     LoginRequest:
       type: object
       required: [username, password]
       properties:
-        username:
-          type: string
-        password:
-          type: string
+        username: { type: string }
+        password: { type: string }
     AuthResponse:
+      allOf:
+        - $ref: '#/components/schemas/DataResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                token: { type: string }
+                refreshToken: { type: string }
+                user: { $ref: '#/components/schemas/User' }
+    RefreshRequest:
       type: object
+      required: [refreshToken]
       properties:
-        token:
-          type: string
-        user:
-          $ref: '#/components/schemas/User'
+        refreshToken: { type: string }
+    ChangePasswordRequest:
+      type: object
+      required: [oldPassword, newPassword]
+      properties:
+        oldPassword: { type: string }
+        newPassword: { type: string }
     RegisterRequest:
       type: object
       required: [name, username, password]
       properties:
-        name:
-          type: string
-        username:
-          type: string
-        password:
-          type: string
-        role:
-          type: string
-        avatarUrl:
-          type: string
+        name: { type: string }
+        username: { type: string }
+        password: { type: string }
+        role: { type: string }
+        avatarUrl: { type: string }
         badges:
           type: array
-          items:
-            type: string
-        bio:
-          type: string
+          items: { type: string }
+        bio: { type: string }
     User:
       type: object
       properties:
-        id:
-          type: string
-        name:
-          type: string
-        username:
-          type: string
-        role:
-          type: string
-        avatarUrl:
-          type: string
+        id: { type: string, format: uuid }
+        name: { type: string }
+        username: { type: string }
+        role: { type: string }
+        avatarUrl: { type: string }
         badges:
           type: array
-          items:
-            type: string
-        bio:
-          type: string
+          items: { type: string }
+        bio: { type: string }
     Project:
       type: object
       properties:
-        id:
-          type: string
-        name:
-          type: string
-        description:
-          type: string
-        status:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        status: { type: string }
+        ticketsCount: { type: integer }
+        createdAt: { type: string, format: date-time }
     ProjectDetail:
       allOf:
         - $ref: '#/components/schemas/Project'
@@ -93,71 +145,121 @@ components:
               items:
                 type: object
                 properties:
-                  id:
-                    type: string
-                  name:
-                    type: string
-                  role:
-                    type: string
+                  id: { type: string, format: uuid }
+                  name: { type: string }
+                  role: { type: string }
+            invites:
+              type: array
+              items:
+                $ref: '#/components/schemas/Invite'
+            activity:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  text: { type: string }
+                  timestamp: { type: string, format: date-time }
     Ticket:
       type: object
       properties:
-        id:
-          type: string
-        projectId:
-          type: string
-        title:
-          type: string
-        description:
-          type: string
-        status:
-          type: string
-        priority:
-          type: string
-        type:
-          type: string
-        assigneeId:
-          type: string
-          nullable: true
-        dueDate:
-          type: string
-          format: date
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        priority: { $ref: '#/components/schemas/TicketPriority' }
+        type: { $ref: '#/components/schemas/TicketType' }
+        assigneeId: { type: string, format: uuid, nullable: true }
+        startDate: { type: string, format: date-time, nullable: true }
+        dueDate: { type: string, format: date, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
         history:
           type: array
           items:
             type: object
             properties:
-              id:
-                type: string
-              text:
-                type: string
-              actorId:
-                type: string
-                nullable: true
-              timestamp:
-                type: string
-                format: date-time
+              id: { type: string, format: uuid }
+              text: { type: string }
+              actorId: { type: string, format: uuid, nullable: true }
+              timestamp: { type: string, format: date-time }
         comments:
           type: array
           items:
-            type: object
-            properties:
-              id:
-                type: string
-              authorId:
-                type: string
-              text:
-                type: string
-              timestamp:
-                type: string
-                format: date-time
+            $ref: '#/components/schemas/Comment'
+    GamificationStats:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        xpTotal: { type: integer }
+        level: { type: integer }
+        nextLevelThreshold: { type: integer }
+        ticketsClosed: { type: integer }
+        streakDays: { type: integer }
+        lastTicketClosedAt: { type: string, format: date-time }
+    GamificationEvent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        ticketId: { type: string, format: uuid, nullable: true }
+        priority: { $ref: '#/components/schemas/TicketPriority' }
+        xp: { type: integer }
+        note: { type: string }
+        createdAt: { type: string, format: date-time }
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        action: { type: string }
+        description: { type: string }
+        actorId: { type: string, format: uuid, nullable: true }
+        entityType: { type: string, nullable: true }
+        entityId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+    Comment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        authorId: { type: string, format: uuid }
+        text: { type: string }
+        timestamp: { type: string, format: date-time }
+    Invite:
+      type: object
+      properties:
+        code: { type: string }
+        maxUses: { type: integer }
+        uses: { type: integer }
+        expiresAt: { type: string, format: date-time, nullable: true }
+    Comment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ticketId: { type: string, format: uuid }
+        authorId: { type: string, format: uuid }
+        author: { type: string }
+        text: { type: string }
+        timestamp: { type: string, format: date-time }
+    Invite:
+      type: object
+      properties:
+        code: { type: string }
+        maxUses: { type: integer }
+        uses: { type: integer }
+        expiresAt: { type: string, format: date-time }
+    LeaderboardEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        username: { type: string }
+        role: { type: string }
+        xpTotal: { type: integer }
+        level: { type: integer }
+        ticketsClosedCount: { type: integer }
+        rank: { type: integer }
+        xpGap: { type: integer }
 paths:
   /api/v1/auth/login:
     post:
@@ -167,17 +269,18 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
+            schema: { $ref: '#/components/schemas/LoginRequest' }
       responses:
         '200':
           description: Authenticated
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/AuthResponse'
+              schema: { $ref: '#/components/schemas/AuthResponse' }
         '401':
           description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v1/auth/register:
     post:
       summary: Register new user
@@ -186,33 +289,78 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterRequest'
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
       responses:
         '201':
           description: Registered
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/AuthResponse'
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /api/v1/auth/refresh:
+    post:
+      summary: Refresh access token
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: Refreshed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401':
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /api/v1/auth/change-password:
+    post:
+      summary: Change password (authenticated)
+      tags: [Auth]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '204': { description: Updated }
+        '401':
+          description: Invalid old password
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v1/users:
     get:
       summary: List users
       tags: [Users]
       security:
         - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaginationLimit'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/User'
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/User' }
+                      limit: { type: integer }
   /api/v1/users/me:
     get:
       summary: Current user profile
@@ -224,8 +372,7 @@ paths:
           description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/User'
+              schema: { $ref: '#/components/schemas/User' }
     patch:
       summary: Update current user profile
       tags: [Users]
@@ -237,19 +384,15 @@ paths:
             schema:
               type: object
               properties:
-                name:
-                  type: string
-                bio:
-                  type: string
-                avatarUrl:
-                  type: string
+                name: { type: string }
+                bio: { type: string }
+                avatarUrl: { type: string }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/User'
+              schema: { $ref: '#/components/schemas/User' }
   /api/v1/users/{id}:
     get:
       summary: Get user
@@ -260,15 +403,13 @@ paths:
         - in: path
           name: id
           required: true
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/User'
+              schema: { $ref: '#/components/schemas/User' }
     patch:
       summary: Update user role (admin only)
       tags: [Users]
@@ -278,8 +419,7 @@ paths:
         - in: path
           name: id
           required: true
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
       requestBody:
         content:
           application/json:
@@ -287,33 +427,35 @@ paths:
               type: object
               required: [role]
               properties:
-                role:
-                  type: string
+                role: { type: string }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/User'
+              schema: { $ref: '#/components/schemas/User' }
   /api/v1/projects:
     get:
       summary: List projects
       tags: [Projects]
       security:
         - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaginationLimit'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Project'
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Project' }
+                      limit: { type: integer }
     post:
       summary: Create project
       tags: [Projects]
@@ -327,21 +469,17 @@ paths:
               type: object
               required: [name, description]
               properties:
-                name:
-                  type: string
-                description:
-                  type: string
+                name: { type: string }
+                description: { type: string }
                 members:
                   type: array
-                  items:
-                    type: string
+                  items: { type: string, format: uuid }
       responses:
         '201':
           description: Created
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectDetail'
+              schema: { $ref: '#/components/schemas/ProjectDetail' }
   /api/v1/projects/{id}:
     get:
       summary: Project detail
@@ -352,15 +490,13 @@ paths:
         - in: path
           name: id
           required: true
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectDetail'
+              schema: { $ref: '#/components/schemas/ProjectDetail' }
   /api/v1/projects/{id}/members:
     post:
       summary: Add project member
@@ -371,21 +507,22 @@ paths:
         - in: path
           name: id
           required: true
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
       requestBody:
         content:
           application/json:
             schema:
               type: object
               properties:
-                userId:
-                  type: string
-                role:
-                  type: string
+                userId: { type: string, format: uuid }
+                role: { type: string }
       responses:
-        '204':
-          description: Added
+        '204': { description: Added }
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v1/projects/{id}/invites:
     post:
       summary: Generate invite code
@@ -396,8 +533,7 @@ paths:
         - in: path
           name: id
           required: true
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
       requestBody:
         content:
           application/json:
@@ -405,27 +541,19 @@ paths:
               type: object
               required: [maxUses, expiryDays]
               properties:
-                maxUses:
-                  type: integer
-                expiryDays:
-                  type: integer
+                maxUses: { type: integer }
+                expiryDays: { type: integer }
       responses:
         '201':
           description: Created
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  code:
-                    type: string
-                  maxUses:
-                    type: integer
-                  uses:
-                    type: integer
-                  expiresAt:
-                    type: string
-                    format: date-time
+                allOf:
+                  - $ref: '#/components/schemas/DataResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Invite' }
   /api/v1/projects/join:
     post:
       summary: Join project via invite code
@@ -439,15 +567,13 @@ paths:
               type: object
               required: [code]
               properties:
-                code:
-                  type: string
+                code: { type: string }
       responses:
         '200':
           description: Joined
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectDetail'
+              schema: { $ref: '#/components/schemas/ProjectDetail' }
   /api/v1/tickets:
     get:
       summary: List tickets
@@ -457,32 +583,28 @@ paths:
       parameters:
         - in: query
           name: projectId
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
         - in: query
           name: assigneeId
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
         - in: query
           name: status
-          schema:
-            type: string
-        - in: query
-          name: limit
-          schema:
-            type: integer
+          schema: { $ref: '#/components/schemas/TicketStatus' }
+        - $ref: '#/components/parameters/PaginationLimit'
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Ticket'
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Ticket' }
+                      limit: { type: integer }
     post:
       summary: Create ticket
       tags: [Tickets]
@@ -496,28 +618,20 @@ paths:
               type: object
               required: [projectId, title, description, priority, type]
               properties:
-                projectId:
-                  type: string
-                title:
-                  type: string
-                description:
-                  type: string
-                priority:
-                  type: string
-                type:
-                  type: string
-                assigneeId:
-                  type: string
-                dueDate:
-                  type: string
-                  format: date
+                projectId: { type: string, format: uuid }
+                title: { type: string }
+                description: { type: string }
+                priority: { $ref: '#/components/schemas/TicketPriority' }
+                type: { $ref: '#/components/schemas/TicketType' }
+                assigneeId: { type: string, format: uuid }
+                startDate: { type: string, format: date-time }
+                dueDate: { type: string, format: date }
       responses:
         '201':
           description: Created
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Ticket'
+              schema: { $ref: '#/components/schemas/Ticket' }
   /api/v1/tickets/{id}:
     get:
       summary: Ticket detail
@@ -528,15 +642,18 @@ paths:
         - in: path
           name: id
           required: true
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Ticket'
+              schema: { $ref: '#/components/schemas/Ticket' }
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
     delete:
       summary: Delete ticket
       tags: [Tickets]
@@ -546,11 +663,9 @@ paths:
         - in: path
           name: id
           required: true
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
       responses:
-        '204':
-          description: Deleted
+        '204': { description: Deleted }
   /api/v1/tickets/{id}/status:
     patch:
       summary: Update ticket status
@@ -561,8 +676,7 @@ paths:
         - in: path
           name: id
           required: true
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
       requestBody:
         content:
           application/json:
@@ -570,15 +684,13 @@ paths:
               type: object
               required: [status]
               properties:
-                status:
-                  type: string
+                status: { $ref: '#/components/schemas/TicketStatus' }
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Ticket'
+              schema: { $ref: '#/components/schemas/Ticket' }
   /api/v1/tickets/{id}/comments:
     post:
       summary: Add ticket comment
@@ -589,8 +701,7 @@ paths:
         - in: path
           name: id
           required: true
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
       requestBody:
         content:
           application/json:
@@ -598,11 +709,60 @@ paths:
               type: object
               required: [text]
               properties:
-                text:
-                  type: string
+                text: { type: string }
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/DataResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Comment' }
+  /api/v1/comments/{commentId}:
+    patch:
+      summary: Update a comment (author only)
+      tags: [Tickets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: commentId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/DataResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Comment' }
+    delete:
+      summary: Delete a comment (author only)
+      tags: [Tickets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: commentId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
   /api/v1/gamification/stats/{userId}:
     get:
       summary: Gamification stats
@@ -613,11 +773,18 @@ paths:
         - in: path
           name: userId
           required: true
-          schema:
-            type: string
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GamificationStats' }
+        '404':
+          description: Stats not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v1/gamification/events:
     get:
       summary: XP events feed
@@ -627,15 +794,43 @@ paths:
       parameters:
         - in: query
           name: userId
-          schema:
-            type: string
-        - in: query
-          name: limit
-          schema:
-            type: integer
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/PaginationLimit'
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/GamificationEvent' }
+                      limit: { type: integer }
+  /api/v1/gamification/leaderboard:
+    get:
+      summary: Leaderboard
+      tags: [Gamification]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PaginationLimit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/DataResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LeaderboardEntry' }
   /api/v1/audit:
     get:
       summary: Audit log
@@ -643,10 +838,18 @@ paths:
       security:
         - BearerAuth: []
       parameters:
-        - in: query
-          name: limit
-          schema:
-            type: integer
+        - $ref: '#/components/parameters/PaginationLimit'
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuditEntry' }
+                      limit: { type: integer }

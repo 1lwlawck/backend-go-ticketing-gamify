@@ -2,10 +2,12 @@ package users
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"backend-go-ticketing-gamify/internal/middleware"
+	"backend-go-ticketing-gamify/internal/response"
 )
 
 // Handler wires user routes.
@@ -26,66 +28,70 @@ func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
 }
 
 func (h *Handler) list(c *gin.Context) {
-	users, err := h.service.List(c.Request.Context())
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	users, err := h.service.List(c.Request.Context(), limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": users})
+	response.WithMeta(c, http.StatusOK, users, gin.H{"limit": limit})
 }
 
 func (h *Handler) me(c *gin.Context) {
 	userCtx := middleware.CurrentUser(c)
 	if userCtx == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	user, err := h.service.Get(c.Request.Context(), userCtx.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if user == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		response.ErrorCode(c, http.StatusNotFound, "not_found", "user not found")
 		return
 	}
-	c.JSON(http.StatusOK, user)
+	response.OK(c, user)
 }
 
 func (h *Handler) updateMe(c *gin.Context) {
 	userCtx := middleware.CurrentUser(c)
 	if userCtx == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
 	var payload UpdateProfileInput
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
 	user, err := h.service.UpdateProfile(c.Request.Context(), userCtx.ID, payload)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if user == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		response.ErrorCode(c, http.StatusNotFound, "not_found", "user not found")
 		return
 	}
-	c.JSON(http.StatusOK, user)
+	response.OK(c, user)
 }
 
 func (h *Handler) get(c *gin.Context) {
 	user, err := h.service.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if user == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		response.ErrorCode(c, http.StatusNotFound, "not_found", "user not found")
 		return
 	}
-	c.JSON(http.StatusOK, user)
+	response.OK(c, user)
 }
 
 func (h *Handler) updateRole(c *gin.Context) {
@@ -93,17 +99,30 @@ func (h *Handler) updateRole(c *gin.Context) {
 		Role string `json:"role" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	if payload.Role != "" && !isAllowedRole(payload.Role) {
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", "invalid role")
 		return
 	}
 	user, err := h.service.UpdateRole(c.Request.Context(), c.Param("id"), payload.Role)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if user == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		response.ErrorCode(c, http.StatusNotFound, "not_found", "user not found")
 		return
 	}
-	c.JSON(http.StatusOK, user)
+	response.OK(c, user)
+}
+
+func isAllowedRole(role string) bool {
+	switch role {
+	case "admin", "project_manager", "developer", "viewer":
+		return true
+	default:
+		return false
+	}
 }

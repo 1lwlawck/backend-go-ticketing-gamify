@@ -17,8 +17,8 @@ func NewService(repo *Repository, auditSvc *audit.Service) *Service {
 	return &Service{repo: repo, audit: auditSvc}
 }
 
-func (s *Service) List(ctx context.Context) ([]User, error) {
-	return s.repo.List(ctx)
+func (s *Service) List(ctx context.Context, limit int) ([]User, error) {
+	return s.repo.List(ctx, limit)
 }
 
 func (s *Service) Get(ctx context.Context, id string) (*User, error) {
