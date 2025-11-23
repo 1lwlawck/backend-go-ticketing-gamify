@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"backend-go-ticketing-gamify/internal/middleware"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,11 @@ func NewHandler(service *Service) *Handler {
 func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
 	router.POST("/login", h.login)
 	router.POST("/register", h.register)
+}
+
+// RegisterProtected mounts routes that need authentication.
+func (h *Handler) RegisterProtected(router *gin.RouterGroup) {
+	router.POST("/change-password", h.changePassword)
 }
 
 type loginRequest struct {
@@ -73,4 +79,35 @@ func (h *Handler) register(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, result)
+}
+
+type changePasswordRequest struct {
+	OldPassword string `json:"oldPassword" binding:"required"`
+	NewPassword string `json:"newPassword" binding:"required"`
+}
+
+func (h *Handler) changePassword(c *gin.Context) {
+	user := middleware.CurrentUser(c)
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	var payload changePasswordRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if payload.NewPassword == payload.OldPassword {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "new password must differ from old password"})
+		return
+	}
+	if err := h.service.ChangePassword(c.Request.Context(), user.ID, payload.OldPassword, payload.NewPassword); err != nil {
+		if err == ErrInvalidCredentials {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid old password"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

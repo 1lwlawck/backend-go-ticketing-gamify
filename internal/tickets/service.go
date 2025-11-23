@@ -8,6 +8,7 @@ import (
 	"backend-go-ticketing-gamify/internal/audit"
 	"backend-go-ticketing-gamify/internal/gamification"
 	"backend-go-ticketing-gamify/internal/middleware"
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -67,6 +68,7 @@ func (s *Service) Create(ctx context.Context, actor *middleware.UserContext, inp
 	entityType := "ticket"
 	entityID := ticket.ID
 	_ = s.audit.Log(ctx, "ticket_created", desc, &actorID, &entityType, &entityID)
+	s.repo.AddProjectActivity(ctx, ticket.ProjectID, &actorID, desc)
 	return ticket, nil
 }
 
@@ -78,6 +80,7 @@ func (s *Service) UpdateStatus(ctx context.Context, actor *middleware.UserContex
 	if current == nil {
 		return nil, nil
 	}
+	wasDone := current.Status == "done"
 	if !canModify(actor, current) {
 		return nil, ErrForbidden
 	}
@@ -90,22 +93,34 @@ func (s *Service) UpdateStatus(ctx context.Context, actor *middleware.UserContex
 	entityID := ticket.ID
 	desc := fmt.Sprintf("%s moved ticket %s to %s", actor.Name, ticket.Title, status)
 	_ = s.audit.Log(ctx, "ticket_status", desc, &actorID, &entityType, &entityID)
+	s.repo.AddProjectActivity(ctx, ticket.ProjectID, &actorID, desc)
 
-	if status == "done" {
-		userID := actor.ID
-		if ticket.AssigneeID != nil && *ticket.AssigneeID != "" {
-			userID = *ticket.AssigneeID
-		}
-		xp := priorityXP[ticket.Priority]
-		if xp == 0 {
-			xp = priorityXP["medium"]
-		}
-		_ = s.gamification.AwardXP(ctx, gamification.AwardInput{
-			UserID:   userID,
-			TicketID: ticket.ID,
-			Priority: ticket.Priority,
-			XP:       xp,
-			Note:     fmt.Sprintf("ticket %s completed", ticket.Title),
+	userID := actor.ID
+	if ticket.AssigneeID != nil && *ticket.AssigneeID != "" {
+		userID = *ticket.AssigneeID
+	}
+	xp := priorityXP[ticket.Priority]
+	if xp == 0 {
+		xp = priorityXP["medium"]
+	}
+	if status == "done" && !wasDone {
+		_ = s.gamification.AdjustXP(ctx, gamification.AdjustInput{
+			UserID:      userID,
+			TicketID:    ticket.ID,
+			Priority:    ticket.Priority,
+			XP:          xp,
+			Note:        fmt.Sprintf("ticket %s completed", ticket.Title),
+			ClosedDelta: 1,
+		})
+	}
+	if wasDone && status != "done" {
+		_ = s.gamification.AdjustXP(ctx, gamification.AdjustInput{
+			UserID:      userID,
+			TicketID:    ticket.ID,
+			Priority:    ticket.Priority,
+			XP:          -xp,
+			Note:        fmt.Sprintf("ticket %s reopened", ticket.Title),
+			ClosedDelta: -1,
 		})
 	}
 	return ticket, nil
@@ -133,12 +148,20 @@ func (s *Service) UpdateDetails(ctx context.Context, actor *middleware.UserConte
 		entityID := ticket.ID
 		_ = s.audit.Log(ctx, "ticket_updated", desc, &actorID, &entityType, &entityID)
 	}
+	// keep activity concise; log only when something actually changed
+	if ticket != nil {
+		desc := fmt.Sprintf("%s updated ticket %s", actor.Name, ticket.Title)
+		s.repo.AddProjectActivity(ctx, ticket.ProjectID, &actor.ID, desc)
+	}
 	return ticket, nil
 }
 
 func (s *Service) AddComment(ctx context.Context, actor *middleware.UserContext, ticketID, text string) (*Comment, error) {
 	if text == "" {
 		return nil, fmt.Errorf("comment text required")
+	}
+	if actor == nil {
+		return nil, ErrForbidden
 	}
 	comment, err := s.repo.AddComment(ctx, ticketID, actor.ID, text)
 	if err != nil {
@@ -151,7 +174,43 @@ func (s *Service) AddComment(ctx context.Context, actor *middleware.UserContext,
 		entityID := ticketID
 		_ = s.audit.Log(ctx, "ticket_commented", desc, &actorID, &entityType, &entityID)
 	}
+	// add comment activity
+	tk, _ := s.repo.Get(ctx, ticketID)
+	if tk != nil {
+		desc := fmt.Sprintf("%s commented on ticket %s", actor.Name, tk.Title)
+		s.repo.AddProjectActivity(ctx, tk.ProjectID, &actor.ID, desc)
+	}
 	return comment, nil
+}
+
+func (s *Service) UpdateComment(ctx context.Context, actor *middleware.UserContext, commentID, text string) (*Comment, error) {
+	if actor == nil {
+		return nil, ErrForbidden
+	}
+	if text == "" {
+		return nil, fmt.Errorf("comment text required")
+	}
+	comment, err := s.repo.UpdateComment(ctx, commentID, actor.ID, text)
+	if err != nil {
+		return nil, err
+	}
+	if comment == nil {
+		return nil, ErrForbidden
+	}
+	return comment, nil
+}
+
+func (s *Service) DeleteComment(ctx context.Context, actor *middleware.UserContext, commentID string) error {
+	if actor == nil {
+		return ErrForbidden
+	}
+	if err := s.repo.DeleteComment(ctx, commentID, actor.ID); err != nil {
+		if err == pgx.ErrNoRows {
+			return ErrForbidden
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *Service) Delete(ctx context.Context, actor *middleware.UserContext, ticketID string) error {
@@ -174,6 +233,10 @@ func (s *Service) Delete(ctx context.Context, actor *middleware.UserContext, tic
 		entityType := "ticket"
 		entityID := ticketID
 		_ = s.audit.Log(ctx, "ticket_deleted", desc, &actorID, &entityType, &entityID)
+	}
+	if current != nil {
+		desc := fmt.Sprintf("%s deleted ticket %s", actor.Name, current.Title)
+		s.repo.AddProjectActivity(ctx, current.ProjectID, &actor.ID, desc)
 	}
 	return nil
 }

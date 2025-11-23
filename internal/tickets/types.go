@@ -61,8 +61,14 @@ type Comment struct {
 	ID        string    `json:"id"`
 	TicketID  string    `json:"ticketId"`
 	AuthorID  string    `json:"authorId"`
+	Author    string    `json:"author"`
 	Body      string    `json:"text"`
 	CreatedAt time.Time `json:"timestamp"`
+}
+
+// CommentUpdate represents update body.
+type CommentUpdate struct {
+	Text string `json:"text" binding:"required"`
 }
 
 // HistoryEntry represents audit trail.

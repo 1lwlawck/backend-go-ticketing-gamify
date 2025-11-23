@@ -26,6 +26,8 @@ func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
 	router.PATCH("/:id/status", h.updateStatus)
 	router.PATCH("/:id/details", h.updateDetails)
 	router.POST("/:id/comments", h.addComment)
+	router.PATCH("/comments/:commentId", h.updateComment)
+	router.DELETE("/comments/:commentId", h.deleteComment)
 	router.DELETE("/:id", h.delete)
 }
 
@@ -149,6 +151,50 @@ func (h *Handler) addComment(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, comment)
+}
+
+func (h *Handler) updateComment(c *gin.Context) {
+	user := middleware.CurrentUser(c)
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	var payload CommentUpdate
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	comment, err := h.service.UpdateComment(c.Request.Context(), user, c.Param("commentId"), payload.Text)
+	if err != nil {
+		if errors.Is(err, ErrForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if comment == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "comment not found"})
+		return
+	}
+	c.JSON(http.StatusOK, comment)
+}
+
+func (h *Handler) deleteComment(c *gin.Context) {
+	user := middleware.CurrentUser(c)
+	if user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthenticated"})
+		return
+	}
+	if err := h.service.DeleteComment(c.Request.Context(), user, c.Param("commentId")); err != nil {
+		if errors.Is(err, ErrForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) delete(c *gin.Context) {

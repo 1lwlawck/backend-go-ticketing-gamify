@@ -69,6 +69,7 @@ func (s *Service) Create(ctx context.Context, actor *middleware.UserContext, inp
 	entityType := "project"
 	entityID := project.ID
 	_ = s.audit.Log(ctx, "project_created", desc, &actorID, &entityType, &entityID)
+	_ = s.repo.AddActivity(ctx, project.ID, &actorID, desc)
 	return project, nil
 }
 
@@ -84,6 +85,7 @@ func (s *Service) AddMember(ctx context.Context, actor *middleware.UserContext, 
 		entityID := projectID
 		_ = s.audit.Log(ctx, "project_member_added", desc, &actorID, &entityType, &entityID)
 	}
+	_ = s.repo.AddActivity(ctx, projectID, &actor.ID, fmt.Sprintf("%s joined as %s", input.UserID, role))
 	return nil
 }
 
@@ -107,6 +109,7 @@ func (s *Service) CreateInvite(ctx context.Context, actor *middleware.UserContex
 		entityID := projectID
 		_ = s.audit.Log(ctx, "project_invite_created", desc, &actorID, &entityType, &entityID)
 	}
+	_ = s.repo.AddActivity(ctx, projectID, &actor.ID, fmt.Sprintf("%s created an invite (%s)", actor.Name, code))
 	return invite, nil
 }
 
@@ -115,13 +118,14 @@ func (s *Service) JoinByCode(ctx context.Context, actor *middleware.UserContext,
 	if err != nil {
 		return nil, err
 	}
+	desc := fmt.Sprintf("%s joined project %s with invite", actor.Name, project.ID)
 	if s.audit != nil {
-		desc := fmt.Sprintf("%s joined project %s with invite", actor.Name, project.ID)
 		actorID := actor.ID
 		entityType := "project"
 		entityID := project.ID
 		_ = s.audit.Log(ctx, "project_joined", desc, &actorID, &entityType, &entityID)
 	}
+	_ = s.repo.AddActivity(ctx, project.ID, &actor.ID, desc)
 	return project, nil
 }
 

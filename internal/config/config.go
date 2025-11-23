@@ -22,6 +22,11 @@ type Config struct {
 	HTTPPort        string
 	DatabaseURL     string
 	JWTSecret       string
+	RateLimitPerMin int
+	APIKeyRateLimit int
+	RateLimitWindow time.Duration
+	APIKey          string
+	APIKeyHeader    string
 	ShutdownTimeout time.Duration
 }
 
@@ -41,6 +46,11 @@ func Load() Config {
 			HTTPPort:        port,
 			DatabaseURL:     os.Getenv("DATABASE_URL"),
 			JWTSecret:       os.Getenv("JWT_SECRET"),
+			RateLimitPerMin: getInt("RATE_LIMIT_PER_MIN", 120),
+			APIKeyRateLimit: getInt("API_KEY_RATE_LIMIT_PER_MIN", 300),
+			RateLimitWindow: getDuration("RATE_LIMIT_WINDOW", time.Minute),
+			APIKey:          os.Getenv("API_KEY"),
+			APIKeyHeader:    getEnv("API_KEY_HEADER", "X-API-Key"),
 			ShutdownTimeout: getDuration("SHUTDOWN_TIMEOUT", defaultShutdown),
 		}
 
@@ -73,6 +83,17 @@ func getDuration(key string, fallback time.Duration) time.Duration {
 			return parsed
 		}
 		log.Printf("config: invalid duration for %s, using fallback %v", key, fallback)
+	}
+	return fallback
+}
+
+func getInt(key string, fallback int) int {
+	if value := os.Getenv(key); value != "" {
+		var parsed int
+		if _, err := fmt.Sscanf(value, "%d", &parsed); err == nil {
+			return parsed
+		}
+		log.Printf("config: invalid int for %s, using fallback %d", key, fallback)
 	}
 	return fallback
 }

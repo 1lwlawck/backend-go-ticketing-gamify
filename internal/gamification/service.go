@@ -38,7 +38,22 @@ func (s *Service) AwardXP(ctx context.Context, input AwardInput) error {
 	if input.UserID == "" || input.XP <= 0 {
 		return nil
 	}
-	return s.repo.Award(ctx, input)
+	return s.repo.Adjust(ctx, AdjustInput{
+		UserID:      input.UserID,
+		TicketID:    input.TicketID,
+		Priority:    input.Priority,
+		XP:          input.XP,
+		Note:        input.Note,
+		ClosedDelta: 1,
+	})
+}
+
+// AdjustXP allows applying negative XP (rollback) and adjusting closed ticket count.
+func (s *Service) AdjustXP(ctx context.Context, input AdjustInput) error {
+	if input.UserID == "" || input.XP == 0 {
+		return nil
+	}
+	return s.repo.Adjust(ctx, input)
 }
 
 func (s *Service) EnsureUser(ctx context.Context, userID string) error {

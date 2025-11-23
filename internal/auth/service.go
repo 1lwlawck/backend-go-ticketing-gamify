@@ -16,6 +16,7 @@ import (
 
 // ErrInvalidCredentials indicates login failure.
 var ErrInvalidCredentials = errors.New("invalid credentials")
+var ErrForbidden = errors.New("forbidden")
 
 // Service coordinates authentication flows.
 type Service struct {
@@ -107,6 +108,39 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*LoginResp
 		_ = s.audit.Log(ctx, action, description, &actorID, &entityType, &entityID)
 	}
 	return s.buildLoginResponse(user)
+}
+
+// ChangePassword lets an authenticated user rotate password.
+func (s *Service) ChangePassword(ctx context.Context, userID, oldPassword, newPassword string) error {
+	if userID == "" || oldPassword == "" || newPassword == "" {
+		return fmt.Errorf("old and new password are required")
+	}
+	u, err := s.repo.FindByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return ErrInvalidCredentials
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(oldPassword)); err != nil {
+		return ErrInvalidCredentials
+	}
+	newHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.UpdatePassword(ctx, userID, string(newHash)); err != nil {
+		return err
+	}
+	if s.audit != nil {
+		action := "password_changed"
+		desc := fmt.Sprintf("%s changed password", u.Username)
+		actorID := u.ID
+		entityType := "user"
+		entityID := u.ID
+		_ = s.audit.Log(ctx, action, desc, &actorID, &entityType, &entityID)
+	}
+	return nil
 }
 
 func (s *Service) buildLoginResponse(user *User) (*LoginResponse, error) {

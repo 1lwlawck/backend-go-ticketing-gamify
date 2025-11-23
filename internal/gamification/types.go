@@ -32,3 +32,13 @@ type AwardInput struct {
 	XP       int
 	Note     string
 }
+
+// AdjustInput allows positive (award) or negative (rollback) XP.
+type AdjustInput struct {
+	UserID      string
+	TicketID    string
+	Priority    string
+	XP          int
+	Note        string
+	ClosedDelta int
+}

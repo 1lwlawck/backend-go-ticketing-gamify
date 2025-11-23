@@ -187,22 +187,68 @@ RETURNING id, project_id, title, description, status, priority, type, reporter_i
 
 func (r *Repository) AddComment(ctx context.Context, ticketID, authorID, text string) (*Comment, error) {
 	const query = `
-INSERT INTO ticket_comments (id, ticket_id, author_id, text, created_at)
-VALUES ($1, $2, $3, $4, NOW())
-RETURNING id, ticket_id, author_id, text, created_at`
+WITH ins AS (
+  INSERT INTO ticket_comments (id, ticket_id, author_id, text, created_at)
+  VALUES ($1, $2, $3, $4, NOW())
+  RETURNING id, ticket_id, author_id, text, created_at
+)
+SELECT ins.id, ins.ticket_id, ins.author_id, COALESCE(u.name, ''), ins.text, ins.created_at
+FROM ins
+LEFT JOIN users u ON u.id = ins.author_id`
 	var cmt Comment
 	if err := r.db.QueryRow(ctx, query, uuid.NewString(), ticketID, authorID, text).Scan(
-		&cmt.ID, &cmt.TicketID, &cmt.AuthorID, &cmt.Body, &cmt.CreatedAt,
+		&cmt.ID, &cmt.TicketID, &cmt.AuthorID, &cmt.Author, &cmt.Body, &cmt.CreatedAt,
 	); err != nil {
 		return nil, err
 	}
 	return &cmt, nil
 }
 
+func (r *Repository) UpdateComment(ctx context.Context, commentID, authorID, text string) (*Comment, error) {
+	const query = `
+UPDATE ticket_comments
+SET text = $3, created_at = created_at
+WHERE id = $1 AND author_id = $2
+RETURNING id, ticket_id, author_id, text, created_at`
+	var cmt Comment
+	if err := r.db.QueryRow(ctx, query, commentID, authorID, text).Scan(
+		&cmt.ID, &cmt.TicketID, &cmt.AuthorID, &cmt.Body, &cmt.CreatedAt,
+	); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	// fetch author name
+	const nameQuery = `SELECT COALESCE(name, '') FROM users WHERE id = $1`
+	_ = r.db.QueryRow(ctx, nameQuery, cmt.AuthorID).Scan(&cmt.Author)
+	return &cmt, nil
+}
+
+func (r *Repository) DeleteComment(ctx context.Context, commentID, authorID string) error {
+	const query = `DELETE FROM ticket_comments WHERE id = $1 AND author_id = $2`
+	tag, err := r.db.Exec(ctx, query, commentID, authorID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func (r *Repository) Delete(ctx context.Context, ticketID string) error {
 	const query = `DELETE FROM tickets WHERE id = $1`
 	_, err := r.db.Exec(ctx, query, ticketID)
 	return err
+}
+
+// AddProjectActivity logs a project-level activity entry (best effort).
+func (r *Repository) AddProjectActivity(ctx context.Context, projectID string, actorID *string, message string) {
+	const query = `
+INSERT INTO project_activity (id, project_id, actor_id, message, created_at)
+VALUES ($1, $2, $3, $4, NOW())`
+	_, _ = r.db.Exec(ctx, query, uuid.NewString(), projectID, actorID, message)
 }
 
 func (r *Repository) addHistory(ctx context.Context, ticketID, text string, actorID *string) error {
@@ -236,10 +282,11 @@ ORDER BY timestamp DESC`
 	}
 
 	const commentQuery = `
-SELECT id, ticket_id, author_id, text, created_at
-FROM ticket_comments
-WHERE ticket_id = $1
-ORDER BY created_at ASC`
+SELECT tc.id, tc.ticket_id, tc.author_id, COALESCE(u.name, ''), tc.text, tc.created_at
+FROM ticket_comments tc
+LEFT JOIN users u ON u.id = tc.author_id
+WHERE tc.ticket_id = $1
+ORDER BY tc.created_at ASC`
 	cRows, err := r.db.Query(ctx, commentQuery, ticket.ID)
 	if err != nil {
 		return err
@@ -247,7 +294,7 @@ ORDER BY created_at ASC`
 	defer cRows.Close()
 	for cRows.Next() {
 		var comment Comment
-		if err := cRows.Scan(&comment.ID, &comment.TicketID, &comment.AuthorID, &comment.Body, &comment.CreatedAt); err != nil {
+		if err := cRows.Scan(&comment.ID, &comment.TicketID, &comment.AuthorID, &comment.Author, &comment.Body, &comment.CreatedAt); err != nil {
 			return err
 		}
 		ticket.Comments = append(ticket.Comments, comment)

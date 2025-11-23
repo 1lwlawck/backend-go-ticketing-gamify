@@ -21,9 +21,12 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) List(ctx context.Context) ([]Project, error) {
 	const query = `
-SELECT id, name, description, status, created_at
-FROM projects
-ORDER BY created_at DESC`
+SELECT p.id, p.name, p.description, p.status, COALESCE(tc.cnt, 0), p.created_at
+FROM projects p
+LEFT JOIN LATERAL (
+  SELECT COUNT(*)::int AS cnt FROM tickets t WHERE t.project_id = p.id
+) tc ON true
+ORDER BY p.created_at DESC`
 	rows, err := r.db.Query(ctx, query)
 	if err != nil {
 		return nil, err
@@ -33,7 +36,7 @@ ORDER BY created_at DESC`
 	var projects []Project
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Status, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Status, &p.TicketsCount, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		projects = append(projects, p)
@@ -43,9 +46,12 @@ ORDER BY created_at DESC`
 
 func (r *Repository) ListForMember(ctx context.Context, userID string) ([]Project, error) {
 	const query = `
-SELECT p.id, p.name, p.description, p.status, p.created_at
+SELECT p.id, p.name, p.description, p.status, COALESCE(tc.cnt, 0), p.created_at
 FROM project_members pm
 JOIN projects p ON p.id = pm.project_id
+LEFT JOIN LATERAL (
+  SELECT COUNT(*)::int AS cnt FROM tickets t WHERE t.project_id = p.id
+) tc ON true
 WHERE pm.user_id = $1
 ORDER BY p.created_at DESC`
 	rows, err := r.db.Query(ctx, query, userID)
@@ -57,7 +63,7 @@ ORDER BY p.created_at DESC`
 	var projects []Project
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Status, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Status, &p.TicketsCount, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		projects = append(projects, p)
@@ -67,11 +73,14 @@ ORDER BY p.created_at DESC`
 
 func (r *Repository) Get(ctx context.Context, id string) (*Detail, error) {
 	const query = `
-SELECT id, name, description, status, created_at
-FROM projects
-WHERE id = $1`
+SELECT p.id, p.name, p.description, p.status, COALESCE(tc.cnt, 0), p.created_at
+FROM projects p
+LEFT JOIN LATERAL (
+  SELECT COUNT(*)::int AS cnt FROM tickets t WHERE t.project_id = p.id
+) tc ON true
+WHERE p.id = $1`
 	var detail Detail
-	if err := r.db.QueryRow(ctx, query, id).Scan(&detail.ID, &detail.Name, &detail.Description, &detail.Status, &detail.CreatedAt); err != nil {
+	if err := r.db.QueryRow(ctx, query, id).Scan(&detail.ID, &detail.Name, &detail.Description, &detail.Status, &detail.TicketsCount, &detail.CreatedAt); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
 		}
@@ -144,6 +153,15 @@ LIMIT 25`
 	}
 
 	return &detail, nil
+}
+
+// AddActivity stores a project activity entry.
+func (r *Repository) AddActivity(ctx context.Context, projectID string, actorID *string, message string) error {
+	const query = `
+INSERT INTO project_activity (id, project_id, actor_id, message, created_at)
+VALUES ($1, $2, $3, $4, NOW())`
+	_, err := r.db.Exec(ctx, query, uuid.NewString(), projectID, actorID, message)
+	return err
 }
 
 func (r *Repository) Create(ctx context.Context, creatorID string, input CreateInput) (*Detail, error) {

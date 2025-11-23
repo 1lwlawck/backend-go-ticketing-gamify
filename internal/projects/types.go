@@ -4,11 +4,12 @@ import "time"
 
 // Project model returned in listing.
 type Project struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	Status       string    `json:"status"`
+	TicketsCount int       `json:"ticketsCount"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 // Member describes a project member.

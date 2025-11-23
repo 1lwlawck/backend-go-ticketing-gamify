@@ -63,6 +63,30 @@ WHERE username = $1`
 	return &u, nil
 }
 
+func (r *Repository) FindByID(ctx context.Context, id string) (*User, error) {
+	const query = `
+SELECT id, name, username, password_hash, role, COALESCE(avatar_url, ''), COALESCE(badges, ARRAY[]::text[]), bio
+FROM users
+WHERE id = $1`
+	var u User
+	if err := r.db.QueryRow(ctx, query, id).Scan(
+		&u.ID,
+		&u.Name,
+		&u.Username,
+		&u.PasswordHash,
+		&u.Role,
+		&u.AvatarURL,
+		&u.Badges,
+		&u.Bio,
+	); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
 func (r *Repository) UsernameExists(ctx context.Context, username string) (bool, error) {
 	const query = `SELECT 1 FROM users WHERE username = $1`
 	if err := r.db.QueryRow(ctx, query, username).Scan(new(int)); err != nil {
@@ -104,4 +128,19 @@ RETURNING id, name, username, password_hash, role, COALESCE(avatar_url, ''), COA
 		return nil, err
 	}
 	return &u, nil
+}
+
+func (r *Repository) UpdatePassword(ctx context.Context, userID, newHash string) error {
+	const query = `
+UPDATE users
+SET password_hash = $2, updated_at = NOW()
+WHERE id = $1`
+	tag, err := r.db.Exec(ctx, query, userID, newHash)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }

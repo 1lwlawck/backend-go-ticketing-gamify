@@ -67,7 +67,12 @@ func (s *Server) routes() *gin.Engine {
 	}
 
 	engine := gin.New()
-	engine.Use(gin.Recovery(), middleware.RequestID(), middleware.CORS())
+	engine.Use(
+		gin.Recovery(),
+		middleware.RequestID(),
+		middleware.CORS(),
+		middleware.RateLimit(s.cfg.RateLimitPerMin, s.cfg.APIKeyRateLimit, s.cfg.RateLimitWindow, s.cfg.APIKeyHeader),
+	)
 	if s.cfg.Env != "production" {
 		engine.Use(gin.Logger())
 	}
@@ -88,6 +93,7 @@ func (s *Server) routes() *gin.Engine {
 	})
 
 	api := engine.Group("/api/v1")
+	api.Use(middleware.APIKeyGuard(s.cfg.APIKey, s.cfg.APIKeyHeader))
 
 	auditRepo := audit.NewRepository(s.pool)
 	auditSvc := audit.NewService(auditRepo)
@@ -120,6 +126,9 @@ func (s *Server) routes() *gin.Engine {
 	projectHandler.RegisterRoutes(protected.Group("/projects"))
 	ticketHandler.RegisterRoutes(protected.Group("/tickets"))
 	gamHandler.RegisterRoutes(protected.Group("/gamification"))
+
+	authProtected := protected.Group("/auth")
+	authHandler.RegisterProtected(authProtected)
 
 	usersGroup := protected.Group("/users")
 	userHandler.RegisterRoutes(usersGroup)

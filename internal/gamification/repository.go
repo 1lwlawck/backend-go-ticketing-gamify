@@ -65,6 +65,21 @@ LIMIT $2`
 }
 
 func (r *Repository) Award(ctx context.Context, input AwardInput) error {
+	return r.Adjust(ctx, AdjustInput{
+		UserID:      input.UserID,
+		TicketID:    input.TicketID,
+		Priority:    input.Priority,
+		XP:          input.XP,
+		Note:        input.Note,
+		ClosedDelta: 1,
+	})
+}
+
+// Adjust can add or subtract XP and adjust closed ticket count.
+func (r *Repository) Adjust(ctx context.Context, input AdjustInput) error {
+	if input.UserID == "" || input.XP == 0 {
+		return nil
+	}
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -80,19 +95,23 @@ VALUES ($1, $2, $3, $4, $5, $6)`
 
 	const upsertStats = `
 INSERT INTO gamification_user_stats (user_id, xp_total, level, next_level_threshold, tickets_closed_count, streak_days, last_ticket_closed_at)
-VALUES ($1, $2, 1, 100, 1, 1, NOW())
+VALUES ($1, $2, 1, 100, $3, 1, NOW())
 ON CONFLICT (user_id) DO UPDATE
-SET xp_total = gamification_user_stats.xp_total + EXCLUDED.xp_total,
-    tickets_closed_count = gamification_user_stats.tickets_closed_count + 1,
-    level = FLOOR((gamification_user_stats.xp_total + EXCLUDED.xp_total)/100)::int + 1,
-    next_level_threshold = (FLOOR((gamification_user_stats.xp_total + EXCLUDED.xp_total)/100)::int + 1) * 100,
+SET xp_total = GREATEST(gamification_user_stats.xp_total + EXCLUDED.xp_total, 0),
+    tickets_closed_count = GREATEST(gamification_user_stats.tickets_closed_count + EXCLUDED.tickets_closed_count, 0),
+    level = FLOOR(GREATEST(gamification_user_stats.xp_total + EXCLUDED.xp_total, 0)/100)::int + 1,
+    next_level_threshold = (FLOOR(GREATEST(gamification_user_stats.xp_total + EXCLUDED.xp_total, 0)/100)::int + 1) * 100,
     streak_days = CASE
-        WHEN gamification_user_stats.last_ticket_closed_at >= CURRENT_DATE THEN gamification_user_stats.streak_days
-        WHEN gamification_user_stats.last_ticket_closed_at = CURRENT_DATE - INTERVAL '1 day' THEN gamification_user_stats.streak_days + 1
-        ELSE 1
+        WHEN EXCLUDED.tickets_closed_count > 0 THEN
+            CASE
+                WHEN gamification_user_stats.last_ticket_closed_at >= CURRENT_DATE THEN gamification_user_stats.streak_days
+                WHEN gamification_user_stats.last_ticket_closed_at = CURRENT_DATE - INTERVAL '1 day' THEN gamification_user_stats.streak_days + 1
+                ELSE 1
+            END
+        ELSE gamification_user_stats.streak_days
     END,
-    last_ticket_closed_at = NOW()`
-	if _, err := tx.Exec(ctx, upsertStats, input.UserID, input.XP); err != nil {
+    last_ticket_closed_at = CASE WHEN EXCLUDED.tickets_closed_count > 0 THEN NOW() ELSE gamification_user_stats.last_ticket_closed_at END`
+	if _, err := tx.Exec(ctx, upsertStats, input.UserID, input.XP, input.ClosedDelta); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
