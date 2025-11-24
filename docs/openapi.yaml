@@ -238,20 +238,6 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
-        authorId: { type: string, format: uuid }
-        text: { type: string }
-        timestamp: { type: string, format: date-time }
-    Invite:
-      type: object
-      properties:
-        code: { type: string }
-        maxUses: { type: integer }
-        uses: { type: integer }
-        expiresAt: { type: string, format: date-time, nullable: true }
-    Comment:
-      type: object
-      properties:
-        id: { type: string, format: uuid }
         ticketId: { type: string, format: uuid }
         authorId: { type: string, format: uuid }
         author: { type: string }
@@ -519,6 +505,7 @@ paths:
       tags: [Epics]
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
       parameters:
         - in: path
           name: id
@@ -540,9 +527,11 @@ paths:
                       limit: { type: integer }
     post:
       summary: Create epic
+      description: Admin / project_manager only
       tags: [Epics]
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
       parameters:
         - in: path
           name: id
@@ -574,6 +563,7 @@ paths:
       tags: [Epics]
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
       parameters:
         - in: path
           name: id
@@ -587,9 +577,11 @@ paths:
               schema: { $ref: '#/components/schemas/Epic' }
     patch:
       summary: Update epic
+      description: Admin / project_manager only
       tags: [Epics]
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
       parameters:
         - in: path
           name: id
@@ -615,6 +607,30 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Epic' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      summary: Delete epic
+      description: Admin / project_manager only. Unlinks epic from tickets.
+      tags: [Epics]
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v1/projects/{id}/members:
     post:
       summary: Add project member
