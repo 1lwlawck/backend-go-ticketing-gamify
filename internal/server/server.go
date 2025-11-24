@@ -13,6 +13,7 @@ import (
 	"backend-go-ticketing-gamify/internal/audit"
 	"backend-go-ticketing-gamify/internal/auth"
 	"backend-go-ticketing-gamify/internal/config"
+	"backend-go-ticketing-gamify/internal/epics"
 	"backend-go-ticketing-gamify/internal/gamification"
 	"backend-go-ticketing-gamify/internal/middleware"
 	"backend-go-ticketing-gamify/internal/projects"
@@ -120,10 +121,15 @@ func (s *Server) routes() *gin.Engine {
 	ticketSvc := tickets.NewService(ticketRepo, auditSvc, gamSvc)
 	ticketHandler := tickets.NewHandler(ticketSvc)
 
+	epicRepo := epics.NewRepository(s.pool)
+	epicSvc := epics.NewService(epicRepo)
+	epicHandler := epics.NewHandler(epicSvc)
+
 	protected := api.Group("/")
 	protected.Use(middleware.AuthMiddleware(s.cfg.JWTSecret))
 
 	projectHandler.RegisterRoutes(protected.Group("/projects"))
+	epicHandler.RegisterRoutes(protected)
 	ticketHandler.RegisterRoutes(protected.Group("/tickets"))
 	gamHandler.RegisterRoutes(protected.Group("/gamification"))
 

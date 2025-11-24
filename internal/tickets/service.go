@@ -21,6 +21,8 @@ var (
 	// ErrForbidden is returned when the user has no permission to mutate ticket.
 	ErrForbidden = errors.New("forbidden")
 	ErrNotFound  = errors.New("not_found")
+	// ErrEpicProjectMismatch when epic does not belong to the ticket's project.
+	ErrEpicProjectMismatch = errors.New("epic_project_mismatch")
 )
 
 func canModify(actor *middleware.UserContext, ticket *Ticket) bool {
@@ -60,6 +62,15 @@ func (s *Service) Get(ctx context.Context, id string) (*Ticket, error) {
 }
 
 func (s *Service) Create(ctx context.Context, actor *middleware.UserContext, input CreateInput) (*Ticket, error) {
+	if input.EpicID != nil && *input.EpicID != "" {
+		ok, err := s.repo.EpicBelongsToProject(ctx, *input.EpicID, input.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, ErrEpicProjectMismatch
+		}
+	}
 	ticket, err := s.repo.Create(ctx, input)
 	if err != nil {
 		return nil, err
@@ -138,6 +149,17 @@ func (s *Service) UpdateDetails(ctx context.Context, actor *middleware.UserConte
 	if !canModify(actor, current) {
 		return nil, ErrForbidden
 	}
+
+	if input.EpicID != nil && *input.EpicID != "" {
+		ok, err := s.repo.EpicBelongsToProject(ctx, *input.EpicID, current.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, ErrEpicProjectMismatch
+		}
+	}
+
 	ticket, err := s.repo.UpdateFields(ctx, ticketID, input)
 	if err != nil || ticket == nil {
 		return ticket, err

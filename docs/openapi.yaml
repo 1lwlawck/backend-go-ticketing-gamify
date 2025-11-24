@@ -66,7 +66,7 @@ components:
               type: integer
     TicketStatus:
       type: string
-      enum: [todo, in_progress, review, done]
+      enum: [backlog, todo, in_progress, review, done]
     TicketPriority:
       type: string
       enum: [low, medium, high, urgent]
@@ -170,6 +170,7 @@ components:
         status: { $ref: '#/components/schemas/TicketStatus' }
         priority: { $ref: '#/components/schemas/TicketPriority' }
         type: { $ref: '#/components/schemas/TicketType' }
+        epicId: { type: string, format: uuid, nullable: true }
         assigneeId: { type: string, format: uuid, nullable: true }
         startDate: { type: string, format: date-time, nullable: true }
         dueDate: { type: string, format: date, nullable: true }
@@ -188,6 +189,21 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Comment'
+    Epic:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        startDate: { type: string, format: date-time, nullable: true }
+        dueDate: { type: string, format: date-time, nullable: true }
+        ownerId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        doneCount: { type: integer }
+        totalCount: { type: integer }
     GamificationStats:
       type: object
       properties:
@@ -497,6 +513,108 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ProjectDetail' }
+  /api/v1/projects/{id}/epics:
+    get:
+      summary: List epics in a project
+      tags: [Epics]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PagedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Epic' }
+                      limit: { type: integer }
+    post:
+      summary: Create epic
+      tags: [Epics]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                description: { type: string }
+                status: { $ref: '#/components/schemas/TicketStatus' }
+                startDate: { type: string, format: date-time }
+                dueDate: { type: string, format: date-time }
+                ownerId: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Epic' }
+  /api/v1/epics/{id}:
+    get:
+      summary: Epic detail
+      tags: [Epics]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Epic' }
+    patch:
+      summary: Update epic
+      tags: [Epics]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+                status: { $ref: '#/components/schemas/TicketStatus' }
+                startDate: { type: string, format: date-time }
+                dueDate: { type: string, format: date-time }
+                ownerId: { type: string, format: uuid }
+                clearStartDate: { type: boolean }
+                clearDueDate: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Epic' }
   /api/v1/projects/{id}/members:
     post:
       summary: Add project member
@@ -588,6 +706,9 @@ paths:
           name: assigneeId
           schema: { type: string, format: uuid }
         - in: query
+          name: epicId
+          schema: { type: string, format: uuid }
+        - in: query
           name: status
           schema: { $ref: '#/components/schemas/TicketStatus' }
         - $ref: '#/components/parameters/PaginationLimit'
@@ -623,6 +744,7 @@ paths:
                 description: { type: string }
                 priority: { $ref: '#/components/schemas/TicketPriority' }
                 type: { $ref: '#/components/schemas/TicketType' }
+                epicId: { type: string, format: uuid }
                 assigneeId: { type: string, format: uuid }
                 startDate: { type: string, format: date-time }
                 dueDate: { type: string, format: date }
@@ -691,6 +813,35 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Ticket' }
+  /api/v1/tickets/{id}/epic:
+    patch:
+      summary: Assign or remove epic from ticket
+      tags: [Tickets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                epicId: { type: string, format: uuid, nullable: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ticket' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /api/v1/tickets/{id}/comments:
     post:
       summary: Add ticket comment

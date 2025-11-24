@@ -26,6 +26,7 @@ func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
 	router.GET("/:id", h.get)
 	router.PATCH("/:id/status", h.updateStatus)
 	router.PATCH("/:id/details", h.updateDetails)
+	router.PATCH("/:id/epic", h.updateEpic)
 	router.POST("/:id/comments", h.addComment)
 	router.PATCH("/comments/:commentId", h.updateComment)
 	router.DELETE("/comments/:commentId", h.deleteComment)
@@ -41,6 +42,7 @@ func (h *Handler) list(c *gin.Context) {
 		ProjectID:  c.Query("projectId"),
 		AssigneeID: c.Query("assigneeId"),
 		Status:     c.Query("status"),
+		EpicID:     c.Query("epicId"),
 		Limit:      limit,
 	}
 	tickets, err := h.service.List(c.Request.Context(), filter)
@@ -69,6 +71,10 @@ func (h *Handler) create(c *gin.Context) {
 	payload.ReporterID = user.ID
 	ticket, err := h.service.Create(c.Request.Context(), user, payload)
 	if err != nil {
+		if errors.Is(err, ErrEpicProjectMismatch) {
+			response.ErrorCode(c, http.StatusBadRequest, "validation_error", "epic must belong to the same project")
+			return
+		}
 		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -134,10 +140,50 @@ func (h *Handler) updateDetails(c *gin.Context) {
 		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
 		return
 	}
+	if payload.EpicID != nil && *payload.EpicID == "" {
+		payload.EpicID = nil
+	}
 	ticket, err := h.service.UpdateDetails(c.Request.Context(), user, c.Param("id"), payload)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
 			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")
+			return
+		}
+		if errors.Is(err, ErrEpicProjectMismatch) {
+			response.ErrorCode(c, http.StatusBadRequest, "validation_error", "epic must belong to the same project")
+			return
+		}
+		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if ticket == nil {
+		response.ErrorCode(c, http.StatusNotFound, "not_found", "ticket not found")
+		return
+	}
+	response.OK(c, ticket)
+}
+
+func (h *Handler) updateEpic(c *gin.Context) {
+	user := middleware.CurrentUser(c)
+	if user == nil {
+		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
+		return
+	}
+	var payload struct {
+		EpicID *string `json:"epicId"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	ticket, err := h.service.UpdateDetails(c.Request.Context(), user, c.Param("id"), UpdateInput{EpicID: payload.EpicID})
+	if err != nil {
+		if errors.Is(err, ErrForbidden) {
+			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")
+			return
+		}
+		if errors.Is(err, ErrEpicProjectMismatch) {
+			response.ErrorCode(c, http.StatusBadRequest, "validation_error", "epic must belong to the same project")
 			return
 		}
 		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
@@ -237,7 +283,7 @@ func (h *Handler) delete(c *gin.Context) {
 func validateTicketEnums(status, priority, typ string) error {
 	if status != "" {
 		switch status {
-		case "todo", "in_progress", "review", "done":
+		case "todo", "backlog", "in_progress", "review", "done":
 		default:
 			return errors.New("invalid status")
 		}

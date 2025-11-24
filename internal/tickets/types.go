@@ -12,6 +12,7 @@ type Ticket struct {
 	Priority     string         `json:"priority"`
 	Type         string         `json:"type"`
 	ReporterID   string         `json:"reporterId"`
+	EpicID       *string        `json:"epicId,omitempty"`
 	AssigneeID   *string        `json:"assigneeId,omitempty"`
 	AssigneeName *string        `json:"assigneeName,omitempty"`
 	StartDate    *time.Time     `json:"startDate,omitempty"`
@@ -27,6 +28,7 @@ type Filter struct {
 	ProjectID  string
 	AssigneeID string
 	Status     string
+	EpicID     string
 	Limit      int
 }
 
@@ -38,6 +40,7 @@ type CreateInput struct {
 	Priority    string     `json:"priority" binding:"required"`
 	Type        string     `json:"type" binding:"required"`
 	ReporterID  string     `json:"reporterId"`
+	EpicID      *string    `json:"epicId"`
 	AssigneeID  *string    `json:"assigneeId"`
 	StartDate   *time.Time `json:"startDate"`
 	DueDate     *time.Time `json:"dueDate"`
@@ -54,6 +57,7 @@ type UpdateInput struct {
 	Description  *string    `json:"description"`
 	Priority     *string    `json:"priority"`
 	Type         *string    `json:"type"`
+	EpicID       *string    `json:"epicId"`
 	AssigneeID   *string    `json:"assigneeId"`
 	StartDate    *time.Time `json:"startDate"`
 	DueDate      *time.Time `json:"dueDate"`
