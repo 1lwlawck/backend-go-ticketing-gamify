@@ -4,10 +4,14 @@ Backend API for the Vue ticketing + gamification app (Go + Gin + pgx).
 All business endpoints are under `/api/v1` and protected by JWT; optional API key via `X-API-Key` if `API_KEY` is set in `.env`.
 
 ## Quick start
-1. Copy `.env.example` to `.env` and fill `DATABASE_URL`, `JWT_SECRET`, (optional) `API_KEY`.
-2. Install Go 1.22+ and deps: `go mod tidy`.
-3. Run: `go run ./cmd/server` (or `air`).
-4. Health checks: `/healthz`, `/version`.
+1) Prasyarat: Go 1.22+, Postgres, `psql` (atau GUI DB).
+2) Salin env: `cp .env.example .env`, isi `DATABASE_URL`, `JWT_SECRET`, (opsional) `API_KEY`.
+3) Install deps: `go mod tidy`.
+
+4) Jalankan server:
+   - `go run ./cmd/server`
+   - atau hot reload: `air`
+5) Cek: `/healthz`, `/version` di `http://localhost:8080`.
 
 ## Auth endpoints
 - `POST /api/v1/auth/login` — `{ username, password } -> { token, user }`
@@ -44,3 +48,9 @@ For local Postgres, add a `db` service in docker-compose and set `DATABASE_URL=p
 - JWT expires in 24h; send `Authorization: Bearer <token>`.
 - Rate limiting per IP/API key configurable via env (`RATE_LIMIT_*`).
 - API key header: `X-API-Key` (if `API_KEY` set).
+
+## Jalankan frontend
+1) Buka repo `taskmgr-ticketing-gamification`.
+2) Salin `.env.example` ke `.env`, set `VITE_API_BASE_URL=http://localhost:8080/api/v1` dan `VITE_API_KEY` jika backend memakai API key.
+3) `npm install` lalu `npm run dev` (Vite).
+4) Login dengan user yang sudah ada atau register via UI.
