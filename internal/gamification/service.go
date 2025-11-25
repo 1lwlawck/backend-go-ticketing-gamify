@@ -64,5 +64,12 @@ func (s *Service) EnsureUser(ctx context.Context, userID string) error {
 }
 
 func (s *Service) Leaderboard(ctx context.Context, limit int) ([]LeaderboardRow, error) {
+	// ensure closed counts are in sync with latest tickets
+	_ = s.repo.RefreshAllClosedCounts(ctx)
 	return s.repo.Leaderboard(ctx, limit)
+}
+
+// RefreshClosedCount recomputes closed ticket count from tickets table for accuracy.
+func (s *Service) RefreshClosedCount(ctx context.Context, userID string) error {
+	return s.repo.RefreshClosedCount(ctx, userID)
 }

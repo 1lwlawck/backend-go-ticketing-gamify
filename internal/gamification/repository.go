@@ -172,3 +172,46 @@ LIMIT $1`
 	}
 	return rowsOut, rows.Err()
 }
+
+// RefreshClosedCount recalculates tickets_closed_count from tickets table for a user.
+func (r *Repository) RefreshClosedCount(ctx context.Context, userID string) error {
+	if userID == "" {
+		return nil
+	}
+	const query = `
+WITH stats AS (
+  SELECT 
+    COUNT(*)::int AS closed_count,
+    MAX(updated_at) AS last_closed_at
+  FROM tickets
+  WHERE assignee_id = $1::uuid AND status = 'done'
+)
+INSERT INTO gamification_user_stats (user_id, xp_total, level, next_level_threshold, tickets_closed_count, streak_days, last_ticket_closed_at)
+VALUES ($1, 0, 1, 100, (SELECT closed_count FROM stats), 0, (SELECT last_closed_at FROM stats))
+ON CONFLICT (user_id) DO UPDATE
+SET tickets_closed_count = GREATEST((SELECT closed_count FROM stats), 0),
+    last_ticket_closed_at = COALESCE((SELECT last_closed_at FROM stats), gamification_user_stats.last_ticket_closed_at)`
+	_, err := r.db.Exec(ctx, query, userID)
+	return err
+}
+
+// RefreshAllClosedCounts recalculates closed ticket counts for all assignees.
+func (r *Repository) RefreshAllClosedCounts(ctx context.Context) error {
+	const query = `
+WITH counts AS (
+  SELECT assignee_id AS user_id,
+         COUNT(*)::int AS closed_count,
+         MAX(updated_at) AS last_closed_at
+  FROM tickets
+  WHERE assignee_id IS NOT NULL AND status = 'done'
+  GROUP BY assignee_id
+)
+INSERT INTO gamification_user_stats (user_id, xp_total, level, next_level_threshold, tickets_closed_count, streak_days, last_ticket_closed_at)
+SELECT user_id, 0, 1, 100, closed_count, 0, last_closed_at
+FROM counts
+ON CONFLICT (user_id) DO UPDATE
+SET tickets_closed_count = EXCLUDED.tickets_closed_count,
+    last_ticket_closed_at = COALESCE(EXCLUDED.last_closed_at, gamification_user_stats.last_ticket_closed_at);`
+	_, err := r.db.Exec(ctx, query)
+	return err
+}

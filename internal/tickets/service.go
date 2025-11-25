@@ -53,6 +53,23 @@ func NewService(repo *Repository, audit *audit.Service, gamification *gamificati
 	return &Service{repo: repo, audit: audit, gamification: gamification}
 }
 
+func formatStatusLabel(status string) string {
+	switch status {
+	case "backlog":
+		return "Backlog"
+	case "todo":
+		return "Todo"
+	case "in_progress":
+		return "In progress"
+	case "review":
+		return "Review"
+	case "done":
+		return "Selesai"
+	default:
+		return status
+	}
+}
+
 func (s *Service) List(ctx context.Context, filter Filter) ([]Ticket, error) {
 	return s.repo.List(ctx, filter)
 }
@@ -80,7 +97,8 @@ func (s *Service) Create(ctx context.Context, actor *middleware.UserContext, inp
 	entityType := "ticket"
 	entityID := ticket.ID
 	_ = s.audit.Log(ctx, "ticket_created", desc, &actorID, &entityType, &entityID)
-	s.repo.AddProjectActivity(ctx, ticket.ProjectID, &actorID, desc)
+	activity := fmt.Sprintf("%s membuat tiket %s", actor.Name, ticket.Title)
+	s.repo.AddProjectActivity(ctx, ticket.ProjectID, &actorID, activity)
 	return ticket, nil
 }
 
@@ -103,7 +121,7 @@ func (s *Service) UpdateStatus(ctx context.Context, actor *middleware.UserContex
 	actorID := actor.ID
 	entityType := "ticket"
 	entityID := ticket.ID
-	desc := fmt.Sprintf("%s moved ticket %s to %s", actor.Name, ticket.Title, status)
+	desc := fmt.Sprintf("%s memindahkan tiket %s ke %s", actor.Name, ticket.Title, formatStatusLabel(status))
 	_ = s.audit.Log(ctx, "ticket_status", desc, &actorID, &entityType, &entityID)
 	s.repo.AddProjectActivity(ctx, ticket.ProjectID, &actorID, desc)
 
@@ -124,6 +142,7 @@ func (s *Service) UpdateStatus(ctx context.Context, actor *middleware.UserContex
 			Note:        fmt.Sprintf("ticket %s completed", ticket.Title),
 			ClosedDelta: 1,
 		})
+		_ = s.gamification.RefreshClosedCount(ctx, userID)
 	}
 	if wasDone && status != "done" {
 		_ = s.gamification.AdjustXP(ctx, gamification.AdjustInput{
@@ -134,6 +153,7 @@ func (s *Service) UpdateStatus(ctx context.Context, actor *middleware.UserContex
 			Note:        fmt.Sprintf("ticket %s reopened", ticket.Title),
 			ClosedDelta: -1,
 		})
+		_ = s.gamification.RefreshClosedCount(ctx, userID)
 	}
 	return ticket, nil
 }
@@ -165,7 +185,7 @@ func (s *Service) UpdateDetails(ctx context.Context, actor *middleware.UserConte
 		return ticket, err
 	}
 	if s.audit != nil {
-		desc := fmt.Sprintf("%s updated ticket %s", actor.Name, ticket.Title)
+		desc := fmt.Sprintf("%s memperbarui tiket %s", actor.Name, ticket.Title)
 		actorID := actor.ID
 		entityType := "ticket"
 		entityID := ticket.ID
@@ -173,7 +193,7 @@ func (s *Service) UpdateDetails(ctx context.Context, actor *middleware.UserConte
 	}
 	// keep activity concise; log only when something actually changed
 	if ticket != nil {
-		desc := fmt.Sprintf("%s updated ticket %s", actor.Name, ticket.Title)
+		desc := fmt.Sprintf("%s memperbarui tiket %s", actor.Name, ticket.Title)
 		s.repo.AddProjectActivity(ctx, ticket.ProjectID, &actor.ID, desc)
 	}
 	return ticket, nil
@@ -191,7 +211,7 @@ func (s *Service) AddComment(ctx context.Context, actor *middleware.UserContext,
 		return nil, err
 	}
 	if s.audit != nil {
-		desc := fmt.Sprintf("%s commented on ticket %s", actor.Name, ticketID)
+		desc := fmt.Sprintf("%s menambahkan komentar pada tiket %s", actor.Name, ticketID)
 		actorID := actor.ID
 		entityType := "ticket"
 		entityID := ticketID
@@ -200,7 +220,7 @@ func (s *Service) AddComment(ctx context.Context, actor *middleware.UserContext,
 	// add comment activity
 	tk, _ := s.repo.Get(ctx, ticketID)
 	if tk != nil {
-		desc := fmt.Sprintf("%s commented on ticket %s", actor.Name, tk.Title)
+		desc := fmt.Sprintf("%s menambahkan komentar pada tiket %s", actor.Name, tk.Title)
 		s.repo.AddProjectActivity(ctx, tk.ProjectID, &actor.ID, desc)
 	}
 	return comment, nil
@@ -251,14 +271,14 @@ func (s *Service) Delete(ctx context.Context, actor *middleware.UserContext, tic
 		return err
 	}
 	if s.audit != nil {
-		desc := fmt.Sprintf("%s deleted ticket %s", actor.Name, ticketID)
+		desc := fmt.Sprintf("%s menghapus tiket %s", actor.Name, ticketID)
 		actorID := actor.ID
 		entityType := "ticket"
 		entityID := ticketID
 		_ = s.audit.Log(ctx, "ticket_deleted", desc, &actorID, &entityType, &entityID)
 	}
 	if current != nil {
-		desc := fmt.Sprintf("%s deleted ticket %s", actor.Name, current.Title)
+		desc := fmt.Sprintf("%s menghapus tiket %s", actor.Name, current.Title)
 		s.repo.AddProjectActivity(ctx, current.ProjectID, &actor.ID, desc)
 	}
 	return nil
