@@ -10,8 +10,8 @@ func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
 }
 
-func (s *Service) List(ctx context.Context, projectID string) ([]Epic, error) {
-	return s.repo.ListByProject(ctx, projectID)
+func (s *Service) List(ctx context.Context, filter Filter) ([]Epic, error) {
+	return s.repo.ListByProject(ctx, filter)
 }
 
 func (s *Service) Get(ctx context.Context, id string) (*Epic, error) {

@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,16 +20,41 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) List(ctx context.Context, limit int) ([]Project, error) {
-	const query = `
-SELECT p.id, p.name, p.description, p.status, COALESCE(tc.cnt, 0), p.created_at
+func (r *Repository) List(ctx context.Context, filter ListFilter) ([]Project, error) {
+	if filter.Limit <= 0 || filter.Limit > 200 {
+		filter.Limit = 50
+	}
+	var (
+		args []any
+		idx  = 1
+		sb   strings.Builder
+	)
+	sb.WriteString(`SELECT p.id, p.name, p.description, p.status, COALESCE(tc.cnt, 0), p.created_at
 FROM projects p
 LEFT JOIN LATERAL (
   SELECT COUNT(*)::int AS cnt FROM tickets t WHERE t.project_id = p.id
 ) tc ON true
-ORDER BY p.created_at DESC
-LIMIT $1`
-	rows, err := r.db.Query(ctx, query, limit)
+WHERE 1=1`)
+	if filter.Status != "" {
+		sb.WriteString(fmt.Sprintf(" AND p.status = $%d", idx))
+		args = append(args, filter.Status)
+		idx++
+	}
+	if filter.Search != "" {
+		sb.WriteString(fmt.Sprintf(" AND (p.name ILIKE $%d OR p.description ILIKE $%d)", idx, idx+1))
+		pat := "%" + filter.Search + "%"
+		args = append(args, pat, pat)
+		idx += 2
+	}
+	if filter.Cursor != nil {
+		sb.WriteString(fmt.Sprintf(" AND p.created_at < $%d", idx))
+		args = append(args, *filter.Cursor)
+		idx++
+	}
+	sb.WriteString(fmt.Sprintf(" ORDER BY p.created_at DESC LIMIT $%d", idx))
+	args = append(args, filter.Limit)
+
+	rows, err := r.db.Query(ctx, sb.String(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -45,18 +71,44 @@ LIMIT $1`
 	return projects, rows.Err()
 }
 
-func (r *Repository) ListForMember(ctx context.Context, userID string, limit int) ([]Project, error) {
-	const query = `
-SELECT p.id, p.name, p.description, p.status, COALESCE(tc.cnt, 0), p.created_at
+func (r *Repository) ListForMember(ctx context.Context, userID string, filter ListFilter) ([]Project, error) {
+	if filter.Limit <= 0 || filter.Limit > 200 {
+		filter.Limit = 50
+	}
+	var (
+		args []any
+		idx  = 1
+		sb   strings.Builder
+	)
+	sb.WriteString(`SELECT p.id, p.name, p.description, p.status, COALESCE(tc.cnt, 0), p.created_at
 FROM project_members pm
 JOIN projects p ON p.id = pm.project_id
 LEFT JOIN LATERAL (
   SELECT COUNT(*)::int AS cnt FROM tickets t WHERE t.project_id = p.id
 ) tc ON true
-WHERE pm.user_id = $1
-ORDER BY p.created_at DESC
-LIMIT $2`
-	rows, err := r.db.Query(ctx, query, userID, limit)
+WHERE pm.user_id = $1`)
+	args = append(args, userID)
+	idx++
+	if filter.Status != "" {
+		sb.WriteString(fmt.Sprintf(" AND p.status = $%d", idx))
+		args = append(args, filter.Status)
+		idx++
+	}
+	if filter.Search != "" {
+		sb.WriteString(fmt.Sprintf(" AND (p.name ILIKE $%d OR p.description ILIKE $%d)", idx, idx+1))
+		pat := "%" + filter.Search + "%"
+		args = append(args, pat, pat)
+		idx += 2
+	}
+	if filter.Cursor != nil {
+		sb.WriteString(fmt.Sprintf(" AND p.created_at < $%d", idx))
+		args = append(args, *filter.Cursor)
+		idx++
+	}
+	sb.WriteString(fmt.Sprintf(" ORDER BY p.created_at DESC LIMIT $%d", idx))
+	args = append(args, filter.Limit)
+
+	rows, err := r.db.Query(ctx, sb.String(), args...)
 	if err != nil {
 		return nil, err
 	}

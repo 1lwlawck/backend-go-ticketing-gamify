@@ -18,8 +18,16 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) ListByProject(ctx context.Context, projectID string) ([]Epic, error) {
-	const query = `
+func (r *Repository) ListByProject(ctx context.Context, filter Filter) ([]Epic, error) {
+	if filter.Limit <= 0 || filter.Limit > 200 {
+		filter.Limit = 50
+	}
+	var (
+		args []any
+		idx  = 1
+		sb   strings.Builder
+	)
+	sb.WriteString(`
 SELECT e.id, e.project_id, e.title, e.description, e.status, e.start_date, e.due_date, e.owner_id, e.created_at, e.updated_at,
        COALESCE(done.count, 0) AS done_count,
 	   COALESCE(total.count, 0) AS total_count
@@ -30,9 +38,29 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
     SELECT COUNT(*)::int AS count FROM tickets t WHERE t.epic_id = e.id
 ) total ON true
-WHERE e.project_id = $1
-ORDER BY e.created_at DESC`
-	rows, err := r.db.Query(ctx, query, projectID)
+WHERE e.project_id = $1`)
+	args = append(args, filter.ProjectID)
+	idx++
+	if filter.Status != "" {
+		sb.WriteString(fmt.Sprintf(" AND e.status = $%d", idx))
+		args = append(args, filter.Status)
+		idx++
+	}
+	if filter.Search != "" {
+		sb.WriteString(fmt.Sprintf(" AND (e.title ILIKE $%d OR e.description ILIKE $%d)", idx, idx+1))
+		pat := "%" + filter.Search + "%"
+		args = append(args, pat, pat)
+		idx += 2
+	}
+	if filter.Cursor != nil {
+		sb.WriteString(fmt.Sprintf(" AND e.created_at < $%d", idx))
+		args = append(args, *filter.Cursor)
+		idx++
+	}
+	sb.WriteString(fmt.Sprintf(" ORDER BY e.created_at DESC LIMIT $%d", idx))
+	args = append(args, filter.Limit)
+
+	rows, err := r.db.Query(ctx, sb.String(), args...)
 	if err != nil {
 		return nil, err
 	}

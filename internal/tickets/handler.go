@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -38,11 +39,19 @@ func (h *Handler) list(c *gin.Context) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	var cursorPtr *time.Time
+	if cursorStr := c.Query("cursor"); cursorStr != "" {
+		if ts, err := time.Parse(time.RFC3339, cursorStr); err == nil {
+			cursorPtr = &ts
+		}
+	}
 	filter := Filter{
 		ProjectID:  c.Query("projectId"),
 		AssigneeID: c.Query("assigneeId"),
 		Status:     c.Query("status"),
 		EpicID:     c.Query("epicId"),
+		Search:     c.Query("q"),
+		Cursor:     cursorPtr,
 		Limit:      limit,
 	}
 	tickets, err := h.service.List(c.Request.Context(), filter)
@@ -50,7 +59,13 @@ func (h *Handler) list(c *gin.Context) {
 		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	response.WithMeta(c, http.StatusOK, tickets, gin.H{"limit": limit})
+	meta := gin.H{"limit": limit}
+	if len(tickets) == limit {
+		// keyset pagination using last item's createdAt
+		last := tickets[len(tickets)-1]
+		meta["nextCursor"] = last.CreatedAt.Format(time.RFC3339Nano)
+	}
+	response.WithMeta(c, http.StatusOK, tickets, meta)
 }
 
 func (h *Handler) create(c *gin.Context) {

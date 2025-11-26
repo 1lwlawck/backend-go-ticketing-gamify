@@ -27,6 +27,14 @@ type Detail struct {
 	Activity []Activity `json:"activity"`
 }
 
+// ListFilter supports searching and pagination.
+type ListFilter struct {
+	Limit   int
+	Search  string
+	Status  string
+	Cursor  *time.Time // created_at cursor (created_at < cursor)
+}
+
 // CreateInput payload for project creation.
 type CreateInput struct {
 	Name        string   `json:"name" binding:"required"`

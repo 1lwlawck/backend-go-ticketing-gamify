@@ -51,6 +51,17 @@ func (r *Repository) List(ctx context.Context, filter Filter) ([]Ticket, error) 
 		args = append(args, filter.Status)
 		idx++
 	}
+	if filter.Search != "" {
+		sb.WriteString(fmt.Sprintf(" AND (title ILIKE $%d OR description ILIKE $%d)", idx, idx+1))
+		pat := "%" + filter.Search + "%"
+		args = append(args, pat, pat)
+		idx += 2
+	}
+	if filter.Cursor != nil {
+		sb.WriteString(fmt.Sprintf(" AND created_at < $%d", idx))
+		args = append(args, *filter.Cursor)
+		idx++
+	}
 	sb.WriteString(fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", idx))
 	args = append(args, filter.Limit)
 

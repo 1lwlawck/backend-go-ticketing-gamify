@@ -29,7 +29,10 @@ type Filter struct {
 	AssigneeID string
 	Status     string
 	EpicID     string
-	Limit      int
+	Search     string
+	// Cursor is a "created_at" RFC3339 value for keyset pagination (created_at < cursor)
+	Cursor *time.Time
+	Limit  int
 }
 
 // CreateInput payload for new ticket.

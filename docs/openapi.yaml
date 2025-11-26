@@ -349,6 +349,18 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/PaginationLimit'
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Search by name/description (case-insensitive)
+        - in: query
+          name: status
+          schema: { type: string }
+          description: Filter by project status
+        - in: query
+          name: cursor
+          schema: { type: string, format: date-time }
+          description: Keyset cursor (created_at of last item)
       responses:
         '200':
           description: OK
@@ -458,6 +470,7 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/Project' }
                       limit: { type: integer }
+                      nextCursor: { type: string, format: date-time, nullable: true }
     post:
       summary: Create project
       tags: [Projects]
@@ -505,12 +518,23 @@ paths:
       tags: [Epics]
       security:
         - BearerAuth: []
-        - ApiKeyAuth: []
       parameters:
         - in: path
           name: id
           required: true
           schema: { type: string, format: uuid }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Search by title/description
+        - in: query
+          name: cursor
+          schema: { type: string, format: date-time }
+          description: Keyset cursor (created_at of last item)
+        - $ref: '#/components/parameters/PaginationLimit'
       responses:
         '200':
           description: OK
@@ -525,6 +549,7 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/Epic' }
                       limit: { type: integer }
+                      nextCursor: { type: string, format: date-time, nullable: true }
     post:
       summary: Create epic
       description: Admin / project_manager only
@@ -727,6 +752,14 @@ paths:
         - in: query
           name: status
           schema: { $ref: '#/components/schemas/TicketStatus' }
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Search by title/description (case-insensitive)
+        - in: query
+          name: cursor
+          schema: { type: string, format: date-time }
+          description: Keyset cursor (created_at of last item)
         - $ref: '#/components/parameters/PaginationLimit'
       responses:
         '200':

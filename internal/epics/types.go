@@ -17,6 +17,15 @@ type Epic struct {
 	TotalCount  int        `json:"totalCount"`
 }
 
+// Filter for listing epics by project.
+type Filter struct {
+	ProjectID string
+	Status    string
+	Search    string
+	Cursor    *time.Time // created_at cursor (created_at < cursor)
+	Limit     int
+}
+
 type CreateInput struct {
 	ProjectID   string     `json:"projectId"`
 	Title       string     `json:"title"`

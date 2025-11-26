@@ -2,6 +2,8 @@ package epics
 
 import (
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -33,12 +35,34 @@ func (h *Handler) listByProject(c *gin.Context) {
 		return
 	}
 	projectID := c.Param("id")
-	epics, err := h.service.List(c.Request.Context(), projectID)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var cursorPtr *time.Time
+	if cursorStr := c.Query("cursor"); cursorStr != "" {
+		if ts, err := time.Parse(time.RFC3339, cursorStr); err == nil {
+			cursorPtr = &ts
+		}
+	}
+	filter := Filter{
+		ProjectID: projectID,
+		Status:    c.Query("status"),
+		Search:    c.Query("q"),
+		Cursor:    cursorPtr,
+		Limit:     limit,
+	}
+	epics, err := h.service.List(c.Request.Context(), filter)
 	if err != nil {
 		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	response.OK(c, epics)
+	meta := gin.H{"limit": limit}
+	if len(epics) == limit {
+		last := epics[len(epics)-1]
+		meta["nextCursor"] = last.CreatedAt.Format(time.RFC3339Nano)
+	}
+	response.WithMeta(c, http.StatusOK, epics, meta)
 }
 
 func (h *Handler) create(c *gin.Context) {

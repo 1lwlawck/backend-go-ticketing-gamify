@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -40,7 +41,19 @@ func (h *Handler) list(c *gin.Context) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	projects, err := h.service.List(c.Request.Context(), user, limit)
+	var cursorPtr *time.Time
+	if cursorStr := c.Query("cursor"); cursorStr != "" {
+		if ts, err := time.Parse(time.RFC3339, cursorStr); err == nil {
+			cursorPtr = &ts
+		}
+	}
+	filter := ListFilter{
+		Limit:  limit,
+		Search: c.Query("q"),
+		Status: c.Query("status"),
+		Cursor: cursorPtr,
+	}
+	projects, err := h.service.List(c.Request.Context(), user, filter)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
 			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")
@@ -49,7 +62,12 @@ func (h *Handler) list(c *gin.Context) {
 		}
 		return
 	}
-	response.WithMeta(c, http.StatusOK, projects, gin.H{"limit": limit})
+	meta := gin.H{"limit": limit}
+	if len(projects) == limit {
+		last := projects[len(projects)-1]
+		meta["nextCursor"] = last.CreatedAt.Format(time.RFC3339Nano)
+	}
+	response.WithMeta(c, http.StatusOK, projects, meta)
 }
 
 func (h *Handler) get(c *gin.Context) {
