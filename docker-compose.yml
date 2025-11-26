@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ticket
+      POSTGRES_PASSWORD: ticket
+      POSTGRES_DB: ticket
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://ticket:ticket@db:5432/ticket?sslmode=disable
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  seed:
+    image: golang:1.23-alpine
+    profiles: ["seed"]
+    working_dir: /app
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://ticket:ticket@db:5432/ticket?sslmode=disable
+    volumes:
+      - ./:/app
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      apk add --no-cache git &&
+      go run ./cmd/seed
+    depends_on:
+      - db
+volumes:
+  db-data:

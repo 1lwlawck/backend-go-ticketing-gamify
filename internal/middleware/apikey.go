@@ -9,6 +9,11 @@ import (
 // APIKeyGuard enforces an API key if one is configured. If apiKey is empty, it is a no-op.
 func APIKeyGuard(apiKey, header string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Let preflight through so CORS works with browsers.
+		if c.Request.Method == http.MethodOptions {
+			c.Next()
+			return
+		}
 		if apiKey == "" {
 			c.Next()
 			return
