@@ -7,6 +7,8 @@ services:
       POSTGRES_DB: ticket
     volumes:
       - db-data:/var/lib/postgresql/data
+      # Initialize schema automatically on first init of the volume
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/00-schema.sql:ro
     ports:
       - "5433:5432"
     healthcheck:
@@ -36,10 +38,7 @@ services:
       DATABASE_URL: postgres://ticket:ticket@db:5432/ticket?sslmode=disable
     volumes:
       - ./:/app
-    entrypoint: ["/bin/sh", "-c"]
-    command: |
-      apk add --no-cache git &&
-      go run ./cmd/seed
+    entrypoint: ["/bin/sh", "-c", "set -e; apk add --no-cache git && go run ./cmd/seed"]
     depends_on:
       - db
 volumes:

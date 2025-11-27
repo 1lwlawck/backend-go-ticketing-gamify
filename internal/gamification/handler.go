@@ -3,6 +3,7 @@ package gamification
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -50,12 +51,22 @@ func (h *Handler) listEvents(c *gin.Context) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	events, err := h.service.ListEvents(c.Request.Context(), userID, limit)
+	var cursorPtr *time.Time
+	if cursorStr := c.Query("cursor"); cursorStr != "" {
+		if ts, err := time.Parse(time.RFC3339, cursorStr); err == nil {
+			cursorPtr = &ts
+		}
+	}
+	events, nextCursor, err := h.service.ListEvents(c.Request.Context(), userID, limit, cursorPtr)
 	if err != nil {
 		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	response.WithMeta(c, http.StatusOK, events, gin.H{"limit": limit})
+	meta := gin.H{"limit": limit}
+	if nextCursor != nil {
+		meta["nextCursor"] = *nextCursor
+	}
+	response.WithMeta(c, http.StatusOK, events, meta)
 }
 
 func (h *Handler) leaderboard(c *gin.Context) {
@@ -63,10 +74,18 @@ func (h *Handler) leaderboard(c *gin.Context) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	rows, err := h.service.Leaderboard(c.Request.Context(), limit)
+	cursor, _ := strconv.Atoi(c.DefaultQuery("cursor", "0"))
+	if cursor < 0 {
+		cursor = 0
+	}
+	rows, err := h.service.Leaderboard(c.Request.Context(), limit, cursor)
 	if err != nil {
 		response.ErrorCode(c, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	response.OK(c, rows)
+	meta := gin.H{"limit": limit}
+	if len(rows) == limit {
+		meta["nextCursor"] = cursor + limit
+	}
+	response.WithMeta(c, http.StatusOK, rows, meta)
 }

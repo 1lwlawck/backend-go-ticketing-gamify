@@ -1,6 +1,9 @@
 package gamification
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type LeaderboardRow struct {
 	ID                 string `json:"id"`
@@ -27,11 +30,11 @@ func (s *Service) GetStats(ctx context.Context, userID string) (*UserStats, erro
 	return s.repo.GetStats(ctx, userID)
 }
 
-func (s *Service) ListEvents(ctx context.Context, userID string, limit int) ([]XPEvent, error) {
+func (s *Service) ListEvents(ctx context.Context, userID string, limit int, cursor *time.Time) ([]XPEvent, *string, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	return s.repo.ListEvents(ctx, userID, limit)
+	return s.repo.ListEvents(ctx, userID, limit, cursor)
 }
 
 func (s *Service) AwardXP(ctx context.Context, input AwardInput) error {
@@ -63,10 +66,10 @@ func (s *Service) EnsureUser(ctx context.Context, userID string) error {
 	return s.repo.EnsureUser(ctx, userID)
 }
 
-func (s *Service) Leaderboard(ctx context.Context, limit int) ([]LeaderboardRow, error) {
+func (s *Service) Leaderboard(ctx context.Context, limit int, cursor int) ([]LeaderboardRow, error) {
 	// ensure closed counts are in sync with latest tickets
 	_ = s.repo.RefreshAllClosedCounts(ctx)
-	return s.repo.Leaderboard(ctx, limit)
+	return s.repo.Leaderboard(ctx, limit, cursor)
 }
 
 // RefreshClosedCount recomputes closed ticket count from tickets table for accuracy.

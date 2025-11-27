@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -39,6 +40,10 @@ func (h *Handler) list(c *gin.Context) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	projectID := c.Query("projectId")
+	if strings.EqualFold(projectID, "all") {
+		projectID = ""
+	}
 	var cursorPtr *time.Time
 	if cursorStr := c.Query("cursor"); cursorStr != "" {
 		if ts, err := time.Parse(time.RFC3339, cursorStr); err == nil {
@@ -46,7 +51,7 @@ func (h *Handler) list(c *gin.Context) {
 		}
 	}
 	filter := Filter{
-		ProjectID:  c.Query("projectId"),
+		ProjectID:  projectID,
 		AssigneeID: c.Query("assigneeId"),
 		Status:     c.Query("status"),
 		EpicID:     c.Query("epicId"),

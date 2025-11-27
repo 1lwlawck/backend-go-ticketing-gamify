@@ -25,6 +25,8 @@ type Detail struct {
 	Members  []Member   `json:"members"`
 	Invites  []Invite   `json:"invites"`
 	Activity []Activity `json:"activity"`
+	// ActivityNextCursor is present when more activity entries are available (keyset by created_at).
+	ActivityNextCursor *string `json:"activityNextCursor,omitempty"`
 }
 
 // ListFilter supports searching and pagination.
@@ -33,6 +35,13 @@ type ListFilter struct {
 	Search  string
 	Status  string
 	Cursor  *time.Time // created_at cursor (created_at < cursor)
+}
+
+// ActivityFilter supports pagination/search for project activity feed.
+type ActivityFilter struct {
+	Limit  int
+	Search string
+	Cursor *time.Time // created_at cursor (created_at < cursor)
 }
 
 // CreateInput payload for project creation.

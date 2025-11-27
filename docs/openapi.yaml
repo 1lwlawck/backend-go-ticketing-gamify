@@ -224,6 +224,18 @@ components:
         xp: { type: integer }
         note: { type: string }
         createdAt: { type: string, format: date-time }
+    LeaderboardEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        username: { type: string }
+        role: { type: string }
+        xp: { type: integer }
+        level: { type: integer }
+        ticketsClosedCount: { type: integer }
+        rank: { type: integer }
+        xpGap: { type: integer }
     AuditEntry:
       type: object
       properties:
@@ -996,6 +1008,9 @@ paths:
           name: userId
           schema: { type: string, format: uuid }
         - $ref: '#/components/parameters/PaginationLimit'
+        - in: query
+          name: cursor
+          schema: { type: string, format: date-time }
       responses:
         '200':
           description: OK
@@ -1010,6 +1025,7 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/GamificationEvent' }
                       limit: { type: integer }
+                      nextCursor: { type: string, format: date-time, nullable: true }
   /api/v1/gamification/leaderboard:
     get:
       summary: Leaderboard
@@ -1018,6 +1034,9 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/PaginationLimit'
+        - in: query
+          name: cursor
+          schema: { type: integer, minimum: 0, default: 0 }
       responses:
         '200':
           description: OK
@@ -1031,6 +1050,7 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/LeaderboardEntry' }
+                      nextCursor: { type: integer, nullable: true }
   /api/v1/audit:
     get:
       summary: Audit log
@@ -1039,6 +1059,9 @@ paths:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/PaginationLimit'
+        - in: query
+          name: cursor
+          schema: { type: string, format: date-time }
       responses:
         '200':
           description: OK
@@ -1053,3 +1076,4 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/AuditEntry' }
                       limit: { type: integer }
+                      nextCursor: { type: string, format: date-time, nullable: true }

@@ -1,0 +1,198 @@
+{
+  "info": {
+    "name": "Ticketing Gamify API",
+    "_postman_id": "d1e7d7b4-collection-placeholder",
+    "description": "Postman collection for the Ticketing Gamification API.\nUse the `{{baseUrl}}` variable for environment-specific hosts.\nMost routes require Bearer JWT. If API key is enabled, add header `X-API-Key: {{apiKey}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"changeme\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "login"] }
+          }
+        },
+        {
+          "name": "Refresh token",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "refresh"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Projects",
+      "item": [
+        {
+          "name": "List projects",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/projects?limit=50&q=&status=&cursor=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "projects"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "q", "value": "" },
+                { "key": "status", "value": "" },
+                { "key": "cursor", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get project detail",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/projects/{{projectId}}?activityLimit=25&activityCursor=", "host": ["{{baseUrl}}"], "path": ["api", "v1", "projects", "{{projectId}}"], "query": [
+              { "key": "activityLimit", "value": "25" },
+              { "key": "activityCursor", "value": "" }
+            ] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tickets",
+      "item": [
+        {
+          "name": "List tickets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tickets?projectId={{projectId}}&q=&status=&assigneeId=&cursor=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tickets"],
+              "query": [
+                { "key": "projectId", "value": "{{projectId}}" },
+                { "key": "q", "value": "" },
+                { "key": "status", "value": "" },
+                { "key": "assigneeId", "value": "" },
+                { "key": "cursor", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"projectId\": \"{{projectId}}\",\n  \"title\": \"Bug title\",\n  \"description\": \"Steps...\",\n  \"priority\": \"medium\",\n  \"type\": \"bug\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/tickets", "host": ["{{baseUrl}}"], "path": ["api", "v1", "tickets"] }
+          }
+        },
+        {
+          "name": "Update ticket status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"done\" }",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/tickets/{{ticketId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "v1", "tickets", "{{ticketId}}", "status"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Gamification",
+      "item": [
+        {
+          "name": "XP Events",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/gamification/events?userId={{userId}}&limit=50&cursor=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "gamification", "events"],
+              "query": [
+                { "key": "userId", "value": "{{userId}}" },
+                { "key": "limit", "value": "50" },
+                { "key": "cursor", "value": "" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Leaderboard",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/gamification/leaderboard?limit=50&cursor=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "gamification", "leaderboard"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "cursor", "value": "" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Audit",
+      "item": [
+        {
+          "name": "List audit",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/audit?limit=50&cursor=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "audit"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "cursor", "value": "" }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "token", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "apiKey", "value": "" },
+    { "key": "projectId", "value": "" },
+    { "key": "ticketId", "value": "" },
+    { "key": "userId", "value": "" }
+  ]
+}

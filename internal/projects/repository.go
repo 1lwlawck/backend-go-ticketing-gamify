@@ -125,7 +125,7 @@ WHERE pm.user_id = $1`)
 	return projects, rows.Err()
 }
 
-func (r *Repository) Get(ctx context.Context, id string) (*Detail, error) {
+func (r *Repository) Get(ctx context.Context, id string, activityFilter *ActivityFilter) (*Detail, error) {
 	const query = `
 SELECT p.id, p.name, p.description, p.status, COALESCE(tc.cnt, 0), p.created_at
 FROM projects p
@@ -184,13 +184,36 @@ ORDER BY created_at DESC`
 		return nil, err
 	}
 
-	const activityQuery = `
-SELECT id, message, created_at
+	limit := 25
+	var args []any
+	var idx = 1
+	sb := strings.Builder{}
+	sb.WriteString(`SELECT id, message, created_at
 FROM project_activity
-WHERE project_id = $1
-ORDER BY created_at DESC
-LIMIT 25`
-	activityRows, err := r.db.Query(ctx, activityQuery, id)
+WHERE project_id = $1`)
+	args = append(args, id)
+	idx++
+	if activityFilter != nil {
+		if activityFilter.Search != "" {
+			sb.WriteString(fmt.Sprintf(" AND message ILIKE $%d", idx))
+			pat := "%" + activityFilter.Search + "%"
+			args = append(args, pat)
+			idx++
+		}
+		if activityFilter.Cursor != nil {
+			sb.WriteString(fmt.Sprintf(" AND created_at < $%d", idx))
+			args = append(args, *activityFilter.Cursor)
+			idx++
+		}
+		if activityFilter.Limit > 0 && activityFilter.Limit <= 200 {
+			limit = activityFilter.Limit
+		}
+	}
+	sb.WriteString(fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", idx))
+	// fetch one extra to compute next cursor
+	args = append(args, limit+1)
+
+	activityRows, err := r.db.Query(ctx, sb.String(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -204,6 +227,12 @@ LIMIT 25`
 	}
 	if err := activityRows.Err(); err != nil {
 		return nil, err
+	}
+	if len(detail.Activity) > limit {
+		last := detail.Activity[limit-1]
+		cursor := last.Timestamp.Format(time.RFC3339Nano)
+		detail.ActivityNextCursor = &cursor
+		detail.Activity = detail.Activity[:limit]
 	}
 
 	return &detail, nil
@@ -257,7 +286,7 @@ ON CONFLICT (project_id, user_id) DO NOTHING`
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return r.Get(ctx, projectID)
+	return r.Get(ctx, projectID, nil)
 }
 
 func (r *Repository) AddMember(ctx context.Context, projectID, userID, role string) error {
@@ -352,5 +381,5 @@ ON CONFLICT (project_id, user_id) DO NOTHING`
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return r.Get(ctx, projectID)
+	return r.Get(ctx, projectID, nil)
 }

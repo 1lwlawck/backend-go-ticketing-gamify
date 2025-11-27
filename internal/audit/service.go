@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -15,11 +16,11 @@ func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
 }
 
-func (s *Service) List(ctx context.Context, limit int) ([]Entry, error) {
+func (s *Service) List(ctx context.Context, limit int, cursor *time.Time) ([]Entry, *string, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	return s.repo.List(ctx, limit)
+	return s.repo.List(ctx, limit, cursor)
 }
 
 func (s *Service) Log(ctx context.Context, action, description string, actorID, entityType, entityID *string) error {

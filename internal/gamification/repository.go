@@ -2,6 +2,9 @@ package gamification
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -40,16 +43,34 @@ WHERE user_id = $1`
 	return &stats, nil
 }
 
-func (r *Repository) ListEvents(ctx context.Context, userID string, limit int) ([]XPEvent, error) {
-	const query = `
-SELECT id, user_id, ticket_id, priority, xp_value, note, created_at
+func (r *Repository) ListEvents(ctx context.Context, userID string, limit int, cursor *time.Time) ([]XPEvent, *string, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var (
+		args []any
+		idx  = 1
+		sb   strings.Builder
+	)
+	sb.WriteString(`SELECT id, user_id, ticket_id, priority, xp_value, note, created_at
 FROM xp_events
-WHERE CASE WHEN $1 = '' THEN TRUE ELSE user_id = $1::uuid END
-ORDER BY created_at DESC
-LIMIT $2`
-	rows, err := r.db.Query(ctx, query, userID, limit)
+WHERE 1=1`)
+	if userID != "" {
+		sb.WriteString(fmt.Sprintf(" AND user_id = $%d::uuid", idx))
+		args = append(args, userID)
+		idx++
+	}
+	if cursor != nil {
+		sb.WriteString(fmt.Sprintf(" AND created_at < $%d", idx))
+		args = append(args, *cursor)
+		idx++
+	}
+	sb.WriteString(fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", idx))
+	args = append(args, limit+1)
+
+	rows, err := r.db.Query(ctx, sb.String(), args...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
@@ -57,11 +78,20 @@ LIMIT $2`
 	for rows.Next() {
 		var e XPEvent
 		if err := rows.Scan(&e.ID, &e.UserID, &e.TicketID, &e.Priority, &e.XP, &e.Note, &e.CreatedAt); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		events = append(events, e)
 	}
-	return events, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	if len(events) > limit {
+		last := events[limit-1]
+		cursorStr := last.CreatedAt.Format(time.RFC3339Nano)
+		events = events[:limit]
+		return events, &cursorStr, nil
+	}
+	return events, nil, nil
 }
 
 func (r *Repository) Award(ctx context.Context, input AwardInput) error {
@@ -126,9 +156,12 @@ ON CONFLICT (user_id) DO NOTHING`
 	return err
 }
 
-func (r *Repository) Leaderboard(ctx context.Context, limit int) ([]LeaderboardRow, error) {
+func (r *Repository) Leaderboard(ctx context.Context, limit int, cursor int) ([]LeaderboardRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
+	}
+	if cursor < 0 {
+		cursor = 0
 	}
 	const query = `
 SELECT u.id,
@@ -141,8 +174,8 @@ SELECT u.id,
 FROM users u
 LEFT JOIN gamification_user_stats g ON g.user_id = u.id
 ORDER BY COALESCE(g.xp_total, 0) DESC, COALESCE(g.level, 1) DESC
-LIMIT $1`
-	rows, err := r.db.Query(ctx, query, limit)
+LIMIT $1 OFFSET $2`
+	rows, err := r.db.Query(ctx, query, limit, cursor)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +244,7 @@ SELECT user_id, 0, 1, 100, closed_count, 0, last_closed_at
 FROM counts
 ON CONFLICT (user_id) DO UPDATE
 SET tickets_closed_count = EXCLUDED.tickets_closed_count,
-    last_ticket_closed_at = COALESCE(EXCLUDED.last_closed_at, gamification_user_stats.last_ticket_closed_at);`
+    last_ticket_closed_at = COALESCE(EXCLUDED.last_ticket_closed_at, gamification_user_stats.last_ticket_closed_at);`
 	_, err := r.db.Exec(ctx, query)
 	return err
 }

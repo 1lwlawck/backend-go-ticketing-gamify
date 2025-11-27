@@ -1,1 +1,0 @@
--- No safe down for enum value removal; intentional no-op.

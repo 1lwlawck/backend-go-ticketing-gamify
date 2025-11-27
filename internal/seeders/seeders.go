@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/brianvoe/gofakeit/v7"
@@ -17,6 +18,8 @@ type Options struct {
 	Projects int
 	Tickets  int
 	Comments int
+	// Preset switches seeding strategy; use "demo"/"realistic" to load curated data.
+	Preset string
 }
 
 type seedUser struct {
@@ -35,6 +38,11 @@ type seedProject struct {
 // SeedAll populates users, projects, tickets, and comments with fake data.
 // It is idempotent enough for dev: conflicts are ignored.
 func SeedAll(ctx context.Context, db *pgxpool.Pool, opt Options) error {
+	switch strings.ToLower(opt.Preset) {
+	case "demo", "realistic", "sample":
+		return SeedSampleData(ctx, db)
+	}
+
 	if opt.Users == 0 {
 		opt.Users = 10
 	}

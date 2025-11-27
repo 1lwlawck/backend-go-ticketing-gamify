@@ -11,10 +11,7 @@ All business endpoints are under `/api/v1` and protected by JWT; optional API ke
    docker compose up -d api
    ```
    - Kalau port 5432 di host bentrok, ubah mapping di `docker-compose.yml` (mis. `"5433:5432"`). `DATABASE_URL` di API tetap `db:5432`.
-3) Import skema (sekali per volume baru):
-   ```
-   Get-Content .\database\schema.sql | docker compose exec -T db psql -U ticket -d ticket
-   ```
+3) Skema otomatis diinit dari `database/schema.sql` saat volume `db-data` pertama kali dibuat. Jika volume lama sudah ada dan butuh reset, jalankan `docker compose down -v` lalu start ulang.
 4) (Opsional) Seed data dummy:
    ```
    docker compose run --rm seed
@@ -43,6 +40,12 @@ SEED_USERS=20 SEED_PROJECTS=5 SEED_TICKETS=20 SEED_COMMENTS=20 \
 DATABASE_URL=postgres://... go run ./cmd/seed
 ```
 Defaults (if not set): users=10, projects=3, tickets=25, comments=40. Password untuk user seeded: `password`.
+
+## Seeding demo dataset (lebih realistis)
+```
+SEED_PRESET=demo DATABASE_URL=postgres://... go run ./cmd/seed
+```
+Preset ini mengisi user (PM, dev, QA, admin), dua project aktif, epics, tiket dengan status beragam, komentar, history, serta poin gamifikasi agar papan terlihat seperti sprint nyata.
 
 ## Project layout
 - `cmd/server` - HTTP server bootstrap

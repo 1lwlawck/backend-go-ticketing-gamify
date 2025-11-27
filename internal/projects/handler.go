@@ -76,7 +76,23 @@ func (h *Handler) get(c *gin.Context) {
 		response.ErrorCode(c, http.StatusUnauthorized, "unauthenticated", "unauthenticated")
 		return
 	}
-	project, err := h.service.Get(c.Request.Context(), user, c.Param("id"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("activityLimit", "25"))
+	if limit <= 0 || limit > 200 {
+		limit = 25
+	}
+	var cursorPtr *time.Time
+	if cursorStr := c.Query("activityCursor"); cursorStr != "" {
+		if ts, err := time.Parse(time.RFC3339, cursorStr); err == nil {
+			cursorPtr = &ts
+		}
+	}
+	activityFilter := ActivityFilter{
+		Limit:  limit,
+		Search: c.Query("activitySearch"),
+		Cursor: cursorPtr,
+	}
+
+	project, err := h.service.Get(c.Request.Context(), user, c.Param("id"), &activityFilter)
 	if err != nil {
 		if errors.Is(err, ErrForbidden) {
 			response.ErrorCode(c, http.StatusForbidden, "forbidden", "forbidden")

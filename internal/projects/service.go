@@ -41,11 +41,11 @@ func (s *Service) List(ctx context.Context, actor *middleware.UserContext, filte
 	return s.repo.ListForMember(ctx, actor.ID, filter)
 }
 
-func (s *Service) Get(ctx context.Context, actor *middleware.UserContext, id string) (*Detail, error) {
+func (s *Service) Get(ctx context.Context, actor *middleware.UserContext, id string, activityFilter *ActivityFilter) (*Detail, error) {
 	if actor == nil {
 		return nil, ErrForbidden
 	}
-	project, err := s.repo.Get(ctx, id)
+	project, err := s.repo.Get(ctx, id, activityFilter)
 	if err != nil || project == nil {
 		return project, err
 	}

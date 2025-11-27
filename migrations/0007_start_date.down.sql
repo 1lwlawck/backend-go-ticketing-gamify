@@ -1,2 +1,0 @@
-ALTER TABLE tickets
-DROP COLUMN IF EXISTS start_date;
