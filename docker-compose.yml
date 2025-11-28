@@ -1,13 +1,13 @@
 services:
   db:
     image: postgres:16-alpine
+    container_name: ticket-db
     environment:
       POSTGRES_USER: ticket
       POSTGRES_PASSWORD: ticket
       POSTGRES_DB: ticket
     volumes:
       - db-data:/var/lib/postgresql/data
-      # Initialize schema automatically on first init of the volume
       - ./database/schema.sql:/docker-entrypoint-initdb.d/00-schema.sql:ro
     ports:
       - "5433:5432"
@@ -16,18 +16,37 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - internal_net
 
   api:
     build: .
+    container_name: ticket-api
     env_file: .env
     environment:
       PORT: 8080
       DATABASE_URL: postgres://ticket:ticket@db:5432/ticket?sslmode=disable
-    ports:
-      - "8080:8080"
+    # -----------------------------------------------------------
+    # KEAMANAN: Port host dimatikan agar akses hanya via Tunnel
+    # Jika ingin testing lokal tanpa internet, uncomment baris di bawah
+    # ports:
+    #   - "8080:8080"
+    # -----------------------------------------------------------
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - internal_net
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: ticket-tunnel
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    networks:
+      - internal_net
 
   seed:
     image: golang:1.23-alpine
@@ -41,5 +60,12 @@ services:
     entrypoint: ["/bin/sh", "-c", "set -e; apk add --no-cache git && go run ./cmd/seed"]
     depends_on:
       - db
+    networks:
+      - internal_net
+
 volumes:
   db-data:
+
+networks:
+  internal_net:
+    driver: bridge
