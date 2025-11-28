@@ -1,22 +1,28 @@
 ﻿# backend-go-ticketing-gamify
 
 Backend API for the Vue ticketing + gamification app (Go + Gin + pgx).
-All business endpoints are under `/api/v1` and protected by JWT; optional API key via `X-API-Key` if `API_KEY` is set in `.env`.
+All business endpoints are under `/api/v1` and protected by JWT; optional API key via `X-API-Key` if `API_KEY` is set in `.env`. Deployment is designed to run behind a Cloudflare Tunnel so host ports stay closed by default.
 
 ## Quick start (Docker)
-1) Salin env: `cp .env.example .env`, isi `JWT_SECRET`, opsional `API_KEY`, dan set `DATABASE_URL=postgres://ticket:ticket@db:5432/ticket?sslmode=disable`.
-2) Start stack:
+1) Salin env: `cp .env.example .env`, isi `JWT_SECRET`, opsional `API_KEY`, dan set `DATABASE_URL=postgres://ticket:ticket@db:5432/ticket?sslmode=disable`. Jika ingin akses via Cloudflare Tunnel, set `TUNNEL_TOKEN` dari Zero Trust dashboard.
+2) Start stack + tunnel (port host API dikunci, akses via URL tunnel):
    ```
    docker compose up -d db
-   docker compose up -d api
+   docker compose up -d api tunnel
    ```
+   - Untuk melihat hostname yang dipakai tunnel, cek log: `docker compose logs -f tunnel` atau lihat di Cloudflare Zero Trust > Networks > Tunnels.
    - Kalau port 5432 di host bentrok, ubah mapping di `docker-compose.yml` (mis. `"5433:5432"`). `DATABASE_URL` di API tetap `db:5432`.
 3) Skema otomatis diinit dari `database/schema.sql` saat volume `db-data` pertama kali dibuat. Jika volume lama sudah ada dan butuh reset, jalankan `docker compose down -v` lalu start ulang.
 4) (Opsional) Seed data dummy:
    ```
    docker compose run --rm seed
    ```
-5) Cek: `/healthz`, `/version` di `http://localhost:8080`; API routes di `/api/v1/...`.
+5) Cek: `/healthz`, `/version`, dan `/api/v1/...` lewat hostname tunnel (atau `http://localhost:8080` jika memakai mode lokal tanpa tunnel).
+
+### Mode lokal tanpa tunnel (dev cepat)
+1) Biarkan `TUNNEL_TOKEN` kosong dan uncomment port mapping 8080 di `docker-compose.yml`.
+2) Jalankan `docker compose up -d db api`.
+3) Akses API di `http://localhost:8080`.
 
 ## Dev native (opsional)
 Masih bisa jalan tanpa Docker:
@@ -62,6 +68,6 @@ Preset ini mengisi user (PM, dev, QA, admin), dua project aktif, epics, tiket de
 
 ## Jalankan frontend
 1) Buka repo `taskmgr-ticketing-gamification`.
-2) Salin `.env.example` ke `.env`, set `VITE_API_BASE_URL=http://localhost:8080/api/v1` dan `VITE_API_KEY` jika backend memakai API key.
+2) Salin `.env.example` ke `.env`, set `VITE_API_BASE_URL=<URL-backend>/api/v1` (pakai URL tunnel atau `http://localhost:8080/api/v1` jika mode lokal) dan `VITE_API_KEY` jika backend memakai API key.
 3) `npm install` lalu `npm run dev` (Vite).
 4) Login dengan user yang sudah ada atau register via UI.
