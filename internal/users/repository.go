@@ -18,7 +18,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) List(ctx context.Context, limit int) ([]User, error) {
 	const query = `
-SELECT id, name, username, role, COALESCE(avatar_url, ''), COALESCE(badges, ARRAY[]::text[]), COALESCE(bio, ''), created_at
+SELECT id, name, username, COALESCE(email, ''), email_verified, role, COALESCE(avatar_url, ''), COALESCE(badges, ARRAY[]::text[]), COALESCE(bio, ''), created_at
 FROM users
 ORDER BY name
 LIMIT $1`
@@ -31,7 +31,7 @@ LIMIT $1`
 	var users []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.Name, &u.Username, &u.Role, &u.AvatarURL, &u.Badges, &u.Bio, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Username, &u.Email, &u.EmailVerified, &u.Role, &u.AvatarURL, &u.Badges, &u.Bio, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
@@ -41,11 +41,11 @@ LIMIT $1`
 
 func (r *Repository) Get(ctx context.Context, id string) (*User, error) {
 	const query = `
-SELECT id, name, username, role, COALESCE(avatar_url, ''), COALESCE(badges, ARRAY[]::text[]), COALESCE(bio, ''), created_at
+SELECT id, name, username, COALESCE(email, ''), email_verified, role, COALESCE(avatar_url, ''), COALESCE(badges, ARRAY[]::text[]), COALESCE(bio, ''), created_at
 FROM users
 WHERE id = $1`
 	var u User
-	if err := r.db.QueryRow(ctx, query, id).Scan(&u.ID, &u.Name, &u.Username, &u.Role, &u.AvatarURL, &u.Badges, &u.Bio, &u.CreatedAt); err != nil {
+	if err := r.db.QueryRow(ctx, query, id).Scan(&u.ID, &u.Name, &u.Username, &u.Email, &u.EmailVerified, &u.Role, &u.AvatarURL, &u.Badges, &u.Bio, &u.CreatedAt); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
 		}
@@ -62,10 +62,10 @@ SET name = COALESCE(NULLIF($2, ''), name),
     avatar_url = COALESCE(NULLIF($4, ''), avatar_url),
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, name, username, role, COALESCE(avatar_url, ''), COALESCE(badges, ARRAY[]::text[]), COALESCE(bio, ''), created_at`
+RETURNING id, name, username, COALESCE(email, ''), email_verified, role, COALESCE(avatar_url, ''), COALESCE(badges, ARRAY[]::text[]), COALESCE(bio, ''), created_at`
 	var u User
 	if err := r.db.QueryRow(ctx, query, id, input.Name, input.Bio, input.AvatarURL).Scan(
-		&u.ID, &u.Name, &u.Username, &u.Role, &u.AvatarURL, &u.Badges, &u.Bio, &u.CreatedAt,
+		&u.ID, &u.Name, &u.Username, &u.Email, &u.EmailVerified, &u.Role, &u.AvatarURL, &u.Badges, &u.Bio, &u.CreatedAt,
 	); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
@@ -80,10 +80,10 @@ func (r *Repository) UpdateRole(ctx context.Context, id, role string) (*User, er
 UPDATE users
 SET role = $2, updated_at = NOW()
 WHERE id = $1
-RETURNING id, name, username, role, COALESCE(avatar_url, ''), COALESCE(badges, ARRAY[]::text[]), COALESCE(bio, ''), created_at`
+RETURNING id, name, username, COALESCE(email, ''), email_verified, role, COALESCE(avatar_url, ''), COALESCE(badges, ARRAY[]::text[]), COALESCE(bio, ''), created_at`
 	var u User
 	if err := r.db.QueryRow(ctx, query, id, role).Scan(
-		&u.ID, &u.Name, &u.Username, &u.Role, &u.AvatarURL, &u.Badges, &u.Bio, &u.CreatedAt,
+		&u.ID, &u.Name, &u.Username, &u.Email, &u.EmailVerified, &u.Role, &u.AvatarURL, &u.Badges, &u.Bio, &u.CreatedAt,
 	); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
