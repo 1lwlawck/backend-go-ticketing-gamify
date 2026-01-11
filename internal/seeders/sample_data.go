@@ -99,8 +99,8 @@ type sampleXPEvent struct {
 
 // SeedSampleData loads a curated dataset that feels closer to a real sprint board.
 func SeedSampleData(ctx context.Context, db *pgxpool.Pool) error {
-	const passwordHash = "$2a$10$JMFl6zQzspGDZsBoBPXa8e7OJbRRqtD9h5pz50jd0vBXZTUVsgx2." // "password"
-	base := time.Now().AddDate(0, 0, -21)
+	const passwordHash = "$2a$10$uPyE3.vi.GBwMRC4b9N8.OMICBTEGbwwhe05UaZBo8zeMtruchomZi" // "password"
+	base := time.Now()
 
 	users := []sampleUser{
 		{

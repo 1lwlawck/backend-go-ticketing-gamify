@@ -22,6 +22,9 @@ func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
 	router.POST("/login", h.login)
 	router.POST("/register", h.register)
 	router.POST("/refresh", h.refresh)
+	router.POST("/verify-email", h.verifyEmail)
+	router.POST("/resend-verification", h.resendVerification)
+	router.POST("/update-unverified-email", h.updateUnverifiedEmail)
 }
 
 // RegisterProtected mounts routes that need authentication.
@@ -56,6 +59,7 @@ func (h *Handler) login(c *gin.Context) {
 
 type registerRequest struct {
 	Name      string   `json:"name" binding:"required"`
+	Email     string   `json:"email" binding:"required"`
 	Username  string   `json:"username" binding:"required"`
 	Password  string   `json:"password" binding:"required"`
 	Role      string   `json:"role"`
@@ -76,6 +80,7 @@ func (h *Handler) register(c *gin.Context) {
 	}
 	result, err := h.service.Register(c.Request.Context(), RegisterInput{
 		Name:      payload.Name,
+		Email:     payload.Email,
 		Username:  payload.Username,
 		Password:  payload.Password,
 		Role:      payload.Role,
@@ -141,6 +146,74 @@ func (h *Handler) changePassword(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// Email verification handlers
+
+type verifyEmailRequest struct {
+	Token string `json:"token" binding:"required"`
+}
+
+func (h *Handler) verifyEmail(c *gin.Context) {
+	var payload verifyEmailRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	if err := h.service.VerifyEmail(c.Request.Context(), payload.Token); err != nil {
+		response.ErrorCode(c, http.StatusBadRequest, "verification_failed", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "Email verified successfully"})
+}
+
+type resendVerificationRequest struct {
+	UserID string `json:"userId" binding:"required"`
+}
+
+func (h *Handler) resendVerification(c *gin.Context) {
+	var payload resendVerificationRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	if err := h.service.ResendVerification(c.Request.Context(), payload.UserID); err != nil {
+		response.ErrorCode(c, http.StatusBadRequest, "resend_failed", err.Error())
+		return
+	}
+
+	response.OK(c, gin.H{"message": "Verification email sent"})
+}
+
+type updateUnverifiedEmailRequest struct {
+	UserID   string `json:"userId" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	NewEmail string `json:"newEmail" binding:"required"`
+}
+
+func (h *Handler) updateUnverifiedEmail(c *gin.Context) {
+	var payload updateUnverifiedEmailRequest
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		response.ErrorCode(c, http.StatusBadRequest, "validation_error", err.Error())
+		return
+	}
+	if err := h.service.UpdateUnverifiedEmail(c.Request.Context(), payload.UserID, payload.Password, payload.NewEmail); err != nil {
+		status := http.StatusInternalServerError
+		code := "internal_error"
+		if err == ErrInvalidCredentials {
+			status = http.StatusUnauthorized
+			code = "invalid_credentials"
+		} else if err.Error() == "email already verified" {
+			status = http.StatusBadRequest
+			code = "already_verified"
+		} else if err.Error() == "email already in use" {
+			status = http.StatusConflict
+			code = "email_in_use"
+		}
+		response.ErrorCode(c, status, code, err.Error())
+		return
+	}
+	response.OK(c, nil)
 }
 
 func isAllowedRole(role string) bool {

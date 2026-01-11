@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -29,7 +28,12 @@ func main() {
 		Projects: parseEnvInt("SEED_PROJECTS", 3),
 		Tickets:  parseEnvInt("SEED_TICKETS", 25),
 		Comments: parseEnvInt("SEED_COMMENTS", 40),
-		Preset:   strings.ToLower(os.Getenv("SEED_PRESET")),
+		Preset:   "realistic", // Force realistic for now
+	}
+
+	// Always clean for this request
+	if err := seeders.CleanAll(ctx, pool); err != nil {
+		log.Printf("clean warning: %v", err)
 	}
 
 	if err := seeders.SeedAll(ctx, pool, opt); err != nil {

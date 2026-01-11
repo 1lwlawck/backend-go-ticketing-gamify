@@ -39,7 +39,12 @@ type seedProject struct {
 // It is idempotent enough for dev: conflicts are ignored.
 func SeedAll(ctx context.Context, db *pgxpool.Pool, opt Options) error {
 	switch strings.ToLower(opt.Preset) {
-	case "demo", "realistic", "sample":
+	case "demo", "realistic", "sample", "":
+		return SeedSampleData(ctx, db)
+	case "random":
+		// fallthrough to random generation
+	default:
+		// also default to random if unknown? No, default to sample.
 		return SeedSampleData(ctx, db)
 	}
 
@@ -56,8 +61,6 @@ func SeedAll(ctx context.Context, db *pgxpool.Pool, opt Options) error {
 		opt.Comments = 40
 	}
 
-	gofakeit.Seed(time.Now().UnixNano())
-
 	users, err := seedUsers(ctx, db, opt.Users)
 	if err != nil {
 		return err
@@ -72,12 +75,36 @@ func SeedAll(ctx context.Context, db *pgxpool.Pool, opt Options) error {
 	if err := seedComments(ctx, db, opt.Comments); err != nil {
 		return err
 	}
+	if err := seedGamificationStats(ctx, db, users); err != nil {
+		return err
+	}
 	log.Println("seeding complete")
 	return nil
 }
 
+// CleanAll truncates all tables to ensure a fresh start.
+func CleanAll(ctx context.Context, db *pgxpool.Pool) error {
+	tables := []string{
+		"ticket_comments", "ticket_history", "tickets", "epics",
+		"project_activity", "project_members", "projects",
+		"xp_events", "gamification_user_stats", "users",
+	}
+	for _, table := range tables {
+		if _, err := db.Exec(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table)); err != nil {
+			// Ignore error if table doesn't exist (e.g. fresh db), but usually we want to know.
+			// For now let's log and continue or return error?
+			// Better to return error to be safe.
+			// But if table might not exist we should check.
+			// Assuming schema exists.
+			return fmt.Errorf("truncate %s: %w", table, err)
+		}
+	}
+	log.Println("database cleaned")
+	return nil
+}
+
 func seedUsers(ctx context.Context, db *pgxpool.Pool, n int) ([]seedUser, error) {
-	const passwordHash = "$2a$10$JMFl6zQzspGDZsBoBPXa8e7OJbRRqtD9h5pz50jd0vBXZTUVsgx2." // bcrypt for "password"
+	const passwordHash = "$2a$10$uPyE3.vi.GBwMRC4b9N8.OMICBTEGbwwhe05UaZBo8zeMtruchomZi" // "password"ypt for "password"
 	var out []seedUser
 	for i := 0; i < n; i++ {
 		id := uuid.NewString()
@@ -157,10 +184,16 @@ func seedTickets(ctx context.Context, db *pgxpool.Pool, n int, projects []seedPr
 		}
 		due := time.Now().AddDate(0, 0, gofakeit.Number(2, 30))
 
+		// random created_at in last 30 days
+		daysAgo := gofakeit.Number(0, 30)
+		createdAt := time.Now().AddDate(0, 0, -daysAgo)
+		// updated_at slightly after created
+		updatedAt := createdAt.Add(time.Duration(gofakeit.Number(1, 24)) * time.Hour)
+
 		_, err := db.Exec(ctx, `
 INSERT INTO tickets (id, project_id, title, description, status, priority, type, reporter_id, assignee_id, due_date, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5::ticket_status, $6::ticket_priority, $7::ticket_type, $8, $9, $10, NOW(), NOW())
-ON CONFLICT (id) DO NOTHING`, ticketID, project.ID, title, desc, status, priority, typ, reporter, assignee, due)
+VALUES ($1, $2, $3, $4, $5::ticket_status, $6::ticket_priority, $7::ticket_type, $8, $9, $10, $11, $12)
+ON CONFLICT (id) DO NOTHING`, ticketID, project.ID, title, desc, status, priority, typ, reporter, assignee, due, createdAt, updatedAt)
 		if err != nil {
 			return err
 		}
@@ -212,6 +245,33 @@ func seedComments(ctx context.Context, db *pgxpool.Pool, n int) error {
 INSERT INTO ticket_comments (id, ticket_id, author_id, text, created_at)
 VALUES ($1, $2, $3, $4, NOW())
 ON CONFLICT (id) DO NOTHING`, uuid.NewString(), ticketID, author, body)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func seedGamificationStats(ctx context.Context, db *pgxpool.Pool, users []seedUser) error {
+	for _, u := range users {
+		xp := gofakeit.Number(0, 5000)
+		level := xp / 1000
+		if level < 1 {
+			level = 1
+		}
+		closed := gofakeit.Number(0, 50)
+		streak := gofakeit.Number(0, 10)
+		lastActive := time.Now().AddDate(0, 0, -gofakeit.Number(0, 5))
+
+		_, err := db.Exec(ctx, `
+INSERT INTO gamification_user_stats (user_id, xp_total, level, next_level_threshold, tickets_closed_count, streak_days, last_ticket_closed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (user_id) DO UPDATE SET 
+	xp_total = EXCLUDED.xp_total,
+	level = EXCLUDED.level,
+	tickets_closed_count = EXCLUDED.tickets_closed_count,
+	streak_days = EXCLUDED.streak_days
+`, u.ID, xp, level, (level+1)*1000, closed, streak, lastActive)
 		if err != nil {
 			return err
 		}

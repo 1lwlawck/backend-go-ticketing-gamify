@@ -58,11 +58,11 @@ func (r *Repository) List(ctx context.Context, filter Filter) ([]Ticket, error) 
 		idx += 2
 	}
 	if filter.Cursor != nil {
-		sb.WriteString(fmt.Sprintf(" AND created_at < $%d", idx))
+		sb.WriteString(fmt.Sprintf(" AND t.created_at < $%d", idx))
 		args = append(args, *filter.Cursor)
 		idx++
 	}
-	sb.WriteString(fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", idx))
+	sb.WriteString(fmt.Sprintf(" ORDER BY t.created_at DESC LIMIT $%d", idx))
 	args = append(args, filter.Limit)
 
 	rows, err := r.db.Query(ctx, sb.String(), args...)

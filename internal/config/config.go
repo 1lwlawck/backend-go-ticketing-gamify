@@ -22,6 +22,7 @@ type Config struct {
 	HTTPPort        string
 	DatabaseURL     string
 	JWTSecret       string
+	FrontendURL     string
 	RateLimitPerMin int
 	APIKeyRateLimit int
 	RateLimitWindow time.Duration
@@ -46,6 +47,7 @@ func Load() Config {
 			HTTPPort:        port,
 			DatabaseURL:     os.Getenv("DATABASE_URL"),
 			JWTSecret:       os.Getenv("JWT_SECRET"),
+			FrontendURL:     getEnv("FRONTEND_URL", "http://localhost:5173"),
 			RateLimitPerMin: getInt("RATE_LIMIT_PER_MIN", 120),
 			APIKeyRateLimit: getInt("API_KEY_RATE_LIMIT_PER_MIN", 300),
 			RateLimitWindow: getDuration("RATE_LIMIT_WINDOW", time.Minute),

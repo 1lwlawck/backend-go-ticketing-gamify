@@ -57,7 +57,12 @@ services:
       DATABASE_URL: postgres://ticket:ticket@db:5432/ticket?sslmode=disable
     volumes:
       - ./:/app
-    entrypoint: ["/bin/sh", "-c", "set -e; apk add --no-cache git && go run ./cmd/seed"]
+    entrypoint:
+      [
+        "/bin/sh",
+        "-c",
+        "set -e; apk update && apk add --no-cache git && go run ./cmd/seed",
+      ]
     depends_on:
       - db
     networks:

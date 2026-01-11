@@ -10,13 +10,21 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"backend-go-ticketing-gamify/internal/achievements"
+	"backend-go-ticketing-gamify/internal/activity"
 	"backend-go-ticketing-gamify/internal/audit"
 	"backend-go-ticketing-gamify/internal/auth"
+	"backend-go-ticketing-gamify/internal/calendar"
+	"backend-go-ticketing-gamify/internal/challenges"
 	"backend-go-ticketing-gamify/internal/config"
+	"backend-go-ticketing-gamify/internal/email"
 	"backend-go-ticketing-gamify/internal/epics"
 	"backend-go-ticketing-gamify/internal/gamification"
 	"backend-go-ticketing-gamify/internal/middleware"
 	"backend-go-ticketing-gamify/internal/projects"
+	"backend-go-ticketing-gamify/internal/reports"
+	"backend-go-ticketing-gamify/internal/seeders"
+	"backend-go-ticketing-gamify/internal/team"
 	"backend-go-ticketing-gamify/internal/tickets"
 	"backend-go-ticketing-gamify/internal/users"
 )
@@ -93,6 +101,22 @@ func (s *Server) routes() *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"version": serviceVersion})
 	})
 
+	// Temporary seed endpoint
+	engine.GET("/seed", func(c *gin.Context) {
+		options := seeders.Options{
+			Users:    10,
+			Projects: 5,
+			Tickets:  50,
+			Comments: 50,
+			Preset:   "demo",
+		}
+		if err := seeders.SeedAll(c.Request.Context(), s.pool, options); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "seeded"})
+	})
+
 	api := engine.Group("/api/v1")
 	api.Use(middleware.APIKeyGuard(s.cfg.APIKey, s.cfg.APIKeyHeader))
 
@@ -105,7 +129,8 @@ func (s *Server) routes() *gin.Engine {
 	gamHandler := gamification.NewHandler(gamSvc)
 
 	authRepo := auth.NewRepository(s.pool)
-	authSvc := auth.NewService(authRepo, gamSvc, auditSvc, s.cfg.JWTSecret)
+	emailSvc := email.NewService()
+	authSvc := auth.NewService(authRepo, gamSvc, auditSvc, emailSvc, s.cfg.JWTSecret, s.cfg.FrontendURL)
 	authHandler := auth.NewHandler(authSvc)
 	authHandler.RegisterRoutes(api.Group("/auth"))
 
@@ -125,6 +150,31 @@ func (s *Server) routes() *gin.Engine {
 	epicSvc := epics.NewService(epicRepo)
 	epicHandler := epics.NewHandler(epicSvc)
 
+	// New modules
+	reportsRepo := reports.NewRepository(s.pool)
+	reportsSvc := reports.NewService(reportsRepo)
+	reportsHandler := reports.NewHandler(reportsSvc)
+
+	calendarRepo := calendar.NewRepository(s.pool)
+	calendarSvc := calendar.NewService(calendarRepo)
+	calendarHandler := calendar.NewHandler(calendarSvc)
+
+	teamRepo := team.NewRepository(s.pool)
+	teamSvc := team.NewService(teamRepo)
+	teamHandler := team.NewHandler(teamSvc)
+
+	achievementsRepo := achievements.NewRepository(s.pool)
+	achievementsSvc := achievements.NewService(achievementsRepo)
+	achievementsHandler := achievements.NewHandler(achievementsSvc)
+
+	challengesRepo := challenges.NewRepository(s.pool)
+	challengesSvc := challenges.NewService(challengesRepo)
+	challengesHandler := challenges.NewHandler(challengesSvc)
+
+	activityRepo := activity.NewRepository(s.pool)
+	activitySvc := activity.NewService(activityRepo)
+	activityHandler := activity.NewHandler(activitySvc)
+
 	protected := api.Group("/")
 	protected.Use(middleware.AuthMiddleware(s.cfg.JWTSecret))
 
@@ -132,6 +182,14 @@ func (s *Server) routes() *gin.Engine {
 	epicHandler.RegisterRoutes(protected)
 	ticketHandler.RegisterRoutes(protected.Group("/tickets"))
 	gamHandler.RegisterRoutes(protected.Group("/gamification"))
+
+	// Register new module routes
+	reportsHandler.RegisterRoutes(protected.Group("/reports"))
+	calendarHandler.RegisterRoutes(protected.Group("/calendar"))
+	teamHandler.RegisterRoutes(protected.Group("/team"))
+	achievementsHandler.RegisterRoutes(protected.Group("/achievements"))
+	challengesHandler.RegisterRoutes(protected.Group("/challenges"))
+	activityHandler.RegisterRoutes(protected.Group("/activity"))
 
 	authProtected := protected.Group("/auth")
 	authHandler.RegisterProtected(authProtected)
